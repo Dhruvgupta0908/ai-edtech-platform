@@ -1,16 +1,29 @@
 // backend/routes/ml.js
 
-const express        = require("express");
-const axios          = require("axios");
-const router         = express.Router();
+const express = require("express");
+const axios = require("axios");
+const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 
-// ✅ Correct fallback (ML service, NOT backend)
 const ML_SERVICE_URL =
   process.env.ML_SERVICE_URL || "https://ai-edtech-platform-2.onrender.com";
 
-// SUBJECT_TOPICS remains same
-const SUBJECT_TOPICS = { /* keep your existing data unchanged */ };
+// ⚠️ Make sure keys are LOWERCASE + SLUG FORMAT
+const SUBJECT_TOPICS = {
+  "operating-systems": [
+    // keep your topics here (same as before)
+  ],
+  // add other subjects in same format
+};
+
+// ✅ Slug helper (GLOBAL)
+const slugify = (text) =>
+  text.toLowerCase()
+    .replace(/\//g, "-")
+    .replace(/&/g, "and")
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]/g, "")
+    .replace(/--+/g, "-");
 
 /* ═══════════════════════════════════════════════════════
    POST /api/ml/predict-struggle
@@ -19,27 +32,28 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
   try {
     const { subject, topicScores } = req.body;
 
-    if (!subject || !topicScores) {
+    // ✅ DEBUG LOGS
+    console.log("Incoming body:", req.body);
+    console.log("Subject received:", subject);
+    console.log("TopicScores:", topicScores);
+    console.log("Available subjects:", Object.keys(SUBJECT_TOPICS));
+
+    // ✅ FIX: normalize subject
+    const normalizedSubject = slugify(subject);
+
+    if (!normalizedSubject || !topicScores) {
       return res.status(400).json({
         message: "subject and topicScores are required",
       });
     }
 
-    const topics = SUBJECT_TOPICS[subject];
+    const topics = SUBJECT_TOPICS[normalizedSubject];
+
     if (!topics) {
       return res.status(400).json({
-        message: `Unknown subject: ${subject}`,
+        message: `Unknown subject: ${normalizedSubject}`,
       });
     }
-
-    // ── Slug helper ──
-    const slugify = (text) =>
-      text.toLowerCase()
-        .replace(/\//g, "-")
-        .replace(/&/g, "-")
-        .replace(/\s+/g, "-")
-        .replace(/[^\w-]/g, "")
-        .replace(/--+/g, "-");
 
     // ── Map scores ──
     const titleToScore = {};
@@ -50,7 +64,6 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       }
     });
 
-    // ── Build payload ──
     const priorScoresInOrder = [];
     const flaskPayload = [];
 
@@ -76,7 +89,7 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       }
     });
 
-    // ── No data case ──
+    // ✅ No data case (NOT error)
     if (flaskPayload.length === 0) {
       return res.json({
         predictions: [],
@@ -84,11 +97,11 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       });
     }
 
-    // ── Call ML service (FIXED HEADERS) ──
+    // ── Call ML service ──
     const mlResponse = await axios.post(
       `${ML_SERVICE_URL}/predict`,
       {
-        subject,
+        subject: normalizedSubject,
         topics: flaskPayload,
       },
       {
@@ -106,7 +119,6 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("ML FULL ERROR:", err.response?.data || err.message);
 
-    // Graceful fallback (VERY IMPORTANT for production)
     return res.json({
       predictions: [],
       reason: "ml_failed",
