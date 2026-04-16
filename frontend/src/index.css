@@ -1,0 +1,692 @@
+/* frontend/src/index.css
+   UPDATED — complete dark mode with robust inline-style overrides.
+   The main challenge: most components use hardcoded inline styles
+   like style={{ color: "#111827", background: "white" }} which
+   CSS variables alone can't fix. The html.dark overrides at the
+   bottom target these hardcoded values directly.
+*/
+
+/* =========================================
+   CSS VARIABLES — LIGHT MODE
+========================================= */
+:root {
+  --bg-primary:   #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card:      #ffffff;
+  --bg-input:     #ffffff;
+  --bg-navbar:    #ffffff;
+  --bg-sidebar:   #1e293b;
+  --bg-hover:     #f8fafc;
+
+  --text-primary:   #1e293b;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+
+  --border-color:  #e2e8f0;
+  --border-subtle: #f1f5f9;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-md: 0 8px 20px rgba(0,0,0,0.08);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.12);
+
+  --accent:       #6366f1;
+  --accent-hover: #4f46e5;
+  --green:        #22c55e;
+  --teal:         #0ea5a4;
+  --streak-bg:    #fff7ed;
+}
+
+/* =========================================
+   CSS VARIABLES — DARK MODE
+========================================= */
+html.dark {
+  --bg-primary:   #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-card:      #1e293b;
+  --bg-input:     #0f172a;
+  --bg-navbar:    #1e293b;
+  --bg-sidebar:   #0f172a;
+  --bg-hover:     #273449;
+
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+
+  --border-color:  #334155;
+  --border-subtle: #1e293b;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.4);
+  --shadow-md: 0 8px 20px rgba(0,0,0,0.5);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.6);
+
+  --accent:       #818cf8;
+  --accent-hover: #6366f1;
+  --green:        #4ade80;
+  --teal:         #2dd4bf;
+  --streak-bg:    #2d1f0a;
+}
+
+/* =========================================
+   GLOBAL
+========================================= */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Poppins", sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background 0.25s ease, color 0.25s ease;
+}
+
+a { text-decoration: none; color: inherit; }
+
+button { font-family: inherit; cursor: pointer; border: none; transition: 0.2s ease; }
+
+/* =========================================
+   DARK MODE TOGGLE (in Navbar)
+========================================= */
+.dark-toggle {
+  background: var(--bg-hover);
+  border: 1.5px solid var(--border-color);
+  border-radius: 20px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+.dark-toggle:hover {
+  border-color: var(--accent);
+}
+
+/* =========================================
+   NAVBAR
+========================================= */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 60px;
+  background: var(--bg-navbar);
+  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.25s ease;
+}
+.logo { font-size: 22px; font-weight: 700; color: var(--teal); }
+.navbar ul { display: flex; gap: 30px; list-style: none; margin: 0; padding: 0; }
+.navbar ul li { cursor: pointer; font-weight: 500; color: var(--text-primary); transition: color 0.2s; }
+.navbar ul li:hover { color: var(--accent); }
+.navbar ul li a { color: inherit; }
+.nav-links { display: flex; gap: 30px; list-style: none; }
+.nav-links li { cursor: pointer; font-weight: 500; }
+.nav-buttons { display: flex; gap: 15px; }
+
+/* =========================================
+   SIDEBAR
+========================================= */
+.sidebar {
+  background: var(--bg-sidebar);
+  min-height: 100vh;
+  padding: 24px 16px;
+  width: 220px;
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  transition: background 0.25s ease;
+}
+.sidebar h2 { color: var(--teal); font-size: 18px; margin: 0 0 20px; padding: 0 8px; }
+.sidebar ul { list-style: none; padding: 0; margin: 16px 0 0; }
+.sidebar ul li {
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  color: #94a3b8; font-size: 14px; font-weight: 500;
+  transition: all 0.2s; margin-bottom: 4px;
+}
+.sidebar ul li:hover { background: rgba(255,255,255,0.08); color: white; }
+.sidebar ul li a { color: inherit; text-decoration: none; display: block; }
+.sidebar ul li.logout { color: #f87171; margin-top: 16px; }
+.sidebar ul li.logout:hover { background: rgba(248,113,113,0.1); }
+
+/* =========================================
+   AUTH PAGES
+========================================= */
+.auth-container {
+  min-height: 100vh; display: flex;
+  justify-content: center; align-items: center;
+  background: linear-gradient(135deg, #6366f1, #06b6d4);
+}
+.auth-box {
+  width: 380px; background: var(--bg-card); padding: 40px;
+  border-radius: 18px; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; gap: 18px;
+  border: 1px solid var(--border-color);
+}
+.auth-box h2 { text-align: center; margin-bottom: 10px; font-weight: 600; color: var(--text-primary); }
+.auth-box form { display: flex; flex-direction: column; gap: 15px; }
+.auth-box input {
+  padding: 12px 14px; border-radius: 8px;
+  border: 1px solid var(--border-color); font-size: 14px;
+  outline: none; transition: 0.2s;
+  background: var(--bg-input); color: var(--text-primary);
+}
+.auth-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+.primary-btn {
+  padding: 12px; background: var(--accent); color: white;
+  border-radius: 8px; font-weight: 600; margin-top: 10px; border: none;
+}
+.primary-btn:hover { background: var(--accent-hover); }
+.auth-switch { text-align: center; font-size: 14px; margin-top: 10px; color: var(--text-secondary); }
+.auth-switch span { color: var(--accent); font-weight: 600; cursor: pointer; }
+
+/* =========================================
+   HERO
+========================================= */
+.hero {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 90px; background: linear-gradient(135deg, #0f172a, #1e293b); color: white;
+}
+.hero-left { max-width: 550px; }
+.hero-left h1 { font-size: 46px; margin-bottom: 20px; }
+.hero-left span { color: var(--green); }
+.hero-left p { color: #cbd5f5; margin-bottom: 25px; }
+.hero-buttons { display: flex; gap: 20px; }
+.secondary-btn { border: 1px solid white; padding: 12px 22px; border-radius: 6px; color: white; background: transparent; }
+.hero-right img { width: 420px; border-radius: 12px; }
+
+/* =========================================
+   COURSES / FEATURES
+========================================= */
+.courses-section { padding: 80px; background: var(--bg-primary); text-align: center; }
+.courses-section h2 { color: var(--text-primary); }
+.courses-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 30px; margin-top: 40px; }
+.course-card {
+  background: var(--bg-card); padding: 25px; border-radius: 12px;
+  box-shadow: var(--shadow-md); transition: 0.3s; border: 1px solid var(--border-color); color: var(--text-primary);
+}
+.course-card h3 { color: var(--text-primary); }
+.course-card p  { color: var(--text-secondary); }
+.course-card:hover { transform: translateY(-6px); }
+.course-card button { margin-top: 15px; background: var(--green); padding: 10px 18px; border-radius: 6px; color: white; }
+.features-section { padding: 80px; text-align: center; background: var(--bg-secondary); }
+.features-section h2 { color: var(--text-primary); }
+.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 30px; margin-top: 40px; }
+.feature-card {
+  background: var(--bg-primary); padding: 25px; border-radius: 12px;
+  box-shadow: var(--shadow-sm); transition: 0.3s; border: 1px solid var(--border-color); color: var(--text-primary);
+}
+.feature-card h3 { color: var(--text-primary); }
+.feature-card p  { color: var(--text-secondary); }
+.feature-card:hover { transform: translateY(-6px); }
+
+/* =========================================
+   DASHBOARD
+========================================= */
+.dashboard-container { min-height: 100vh; padding: 60px; background: var(--bg-primary); transition: background 0.25s ease; }
+.dashboard-content { max-width: 1100px; margin: auto; }
+.subjects-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 25px; margin-top: 40px; }
+.subject-card-modern {
+  background: var(--bg-card); border-radius: 16px; padding: 25px;
+  cursor: pointer; transition: 0.3s; box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-color); color: var(--text-primary);
+}
+.subject-card-modern:hover { transform: translateY(-6px); box-shadow: var(--shadow-lg); }
+.subject-icon { font-size: 28px; margin-bottom: 10px; }
+.progress-bar { height: 6px; background: var(--border-color); border-radius: 6px; margin: 10px 0; }
+.progress-fill { height: 100%; background: linear-gradient(90deg, var(--green), #4ade80); border-radius: 6px; }
+
+/* =========================================
+   TOPIC / SUBJECT / PROFILE PAGES
+========================================= */
+.topic-container { max-width: 900px; margin: auto; padding: 40px; background: var(--bg-primary); }
+.topic-title { text-align: center; margin-bottom: 30px; color: var(--text-primary); }
+.theory-card {
+  background: var(--bg-card); padding: 35px; border-radius: 14px;
+  box-shadow: var(--shadow-md); line-height: 1.8; color: var(--text-primary); border: 1px solid var(--border-color);
+}
+.test-card {
+  background: var(--bg-card); padding: 30px; border-radius: 14px;
+  box-shadow: var(--shadow-md); border: 1px solid var(--border-color); color: var(--text-primary);
+}
+.tab-btn { padding: 10px 20px; border-radius: 25px; background: var(--bg-secondary); font-weight: 600; border: 1px solid var(--border-color); color: var(--text-secondary); }
+.active-tab { background: var(--teal); color: white; border-color: var(--teal); }
+.profile-page { padding: 40px 60px; min-height: 100vh; background: var(--bg-primary); color: var(--text-primary); }
+.profile-page h1 { color: var(--text-primary); margin-bottom: 24px; }
+.profile-card {
+  background: var(--bg-card); border-radius: 14px; padding: 32px; max-width: 500px;
+  border: 1px solid var(--border-color); box-shadow: var(--shadow-md);
+}
+.profile-card p, .profile-card h3 { color: var(--text-primary); }
+.profile-card input {
+  display: block; width: 100%; padding: 10px 14px; margin-bottom: 12px;
+  border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-input); color: var(--text-primary); font-size: 14px; outline: none;
+}
+
+/* =========================================
+   TOPIC NUMBERS
+========================================= */
+.topic-number { width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; color: white; font-size: 16px; }
+.topic-card-modern:nth-child(1)  .topic-number { background: #22c55e; }
+.topic-card-modern:nth-child(2)  .topic-number { background: #3b82f6; }
+.topic-card-modern:nth-child(3)  .topic-number { background: #f59e0b; }
+.topic-card-modern:nth-child(4)  .topic-number { background: #ef4444; }
+.topic-card-modern:nth-child(5)  .topic-number { background: #8b5cf6; }
+.topic-card-modern:nth-child(6)  .topic-number { background: #14b8a6; }
+.topic-card-modern:nth-child(7)  .topic-number { background: #f97316; }
+.topic-card-modern:nth-child(8)  .topic-number { background: #06b6d4; }
+.topic-card-modern:nth-child(9)  .topic-number { background: #ec4899; }
+.topic-card-modern:nth-child(10) .topic-number { background: #6366f1; }
+
+/* =========================================
+   FLOATING ELEMENTS
+========================================= */
+.floating-ai {
+  position: fixed; bottom: 35px; right: 35px; font-size: 38px;
+  background: var(--bg-card); padding: 12px; border-radius: 50%;
+  box-shadow: var(--shadow-lg); animation: floatAI 3s ease-in-out infinite;
+  border: 1px solid var(--border-color); z-index: 999;
+}
+@keyframes floatAI { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+.footer { text-align: center; padding: 30px; background: #0f172a; color: white; }
+
+/* MISC */
+.locked-card { background: var(--bg-hover) !important; border: 1px dashed var(--border-color); transform: none !important; box-shadow: none !important; }
+.socratic-tutor-box { background: var(--bg-hover); border-left: 4px solid #6c63ff; border-radius: 8px; padding: 16px 20px; margin-top: 16px; }
+.tutor-label { font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
+.tutor-btn { background: #6c63ff; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.tutor-question { background: var(--bg-secondary); border-radius: 8px; padding: 12px 16px; margin-top: 12px; display: flex; gap: 10px; align-items: flex-start; font-style: italic; color: var(--text-primary); border: 1px solid var(--border-color); }
+.dismiss-btn { margin-top: 12px; background: none; border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary); }
+
+
+/* =========================================
+   DARK MODE — INLINE STYLE OVERRIDES
+   
+   These target hardcoded colors in inline styles
+   across all components. This is the key fix for
+   the "text invisible in dark mode" problem.
+========================================= */
+
+/* ── Page / container backgrounds ── */
+html.dark .dashboard-container,
+html.dark .topic-container,
+html.dark .profile-page,
+html.dark .subject-container {
+  background: var(--bg-primary) !important;
+}
+
+/* ── White card backgrounds ── */
+html.dark [style*="background: white"],
+html.dark [style*="background:white"],
+html.dark [style*="background: \"white\""],
+html.dark [style*="background-color: white"] {
+  background: var(--bg-card) !important;
+}
+
+/* ── Light gray backgrounds (cards, inputs, sections) ── */
+html.dark [style*="background: #f8fafc"],
+html.dark [style*="background:#f8fafc"],
+html.dark [style*="background: #f3f4f6"],
+html.dark [style*="background:#f3f4f6"],
+html.dark [style*="background: #fafafa"],
+html.dark [style*="background:#fafafa"],
+html.dark [style*="background: #f9fafb"],
+html.dark [style*="background:#f9fafb"],
+html.dark [style*="background: #f5f5f5"],
+html.dark [style*="background:#f5f5f5"] {
+  background: var(--bg-secondary) !important;
+}
+
+/* ── Dark text colors (primary text) ── */
+html.dark [style*="color: #111827"],
+html.dark [style*="color:#111827"],
+html.dark [style*="color: #1f2937"],
+html.dark [style*="color:#1f2937"],
+html.dark [style*="color: #111"],
+html.dark [style*="color:#111"] {
+  color: var(--text-primary) !important;
+}
+
+/* ── Medium text colors (secondary text) ── */
+html.dark [style*="color: #374151"],
+html.dark [style*="color:#374151"],
+html.dark [style*="color: #4b5563"],
+html.dark [style*="color:#4b5563"] {
+  color: var(--text-secondary) !important;
+}
+
+/* ── Muted text colors ── */
+html.dark [style*="color: #6b7280"],
+html.dark [style*="color:#6b7280"],
+html.dark [style*="color: #64748b"],
+html.dark [style*="color:#64748b"] {
+  color: var(--text-muted) !important;
+}
+
+/* ── Borders ── */
+html.dark [style*="border: 1px solid #e5e7eb"],
+html.dark [style*="border:1px solid #e5e7eb"],
+html.dark [style*="border: 1.5px solid #e5e7eb"],
+html.dark [style*="border: 1px solid #e2e8f0"],
+html.dark [style*="border:1px solid #e2e8f0"],
+html.dark [style*="border-color: #e5e7eb"],
+html.dark [style*="border-color:#e5e7eb"] {
+  border-color: var(--border-color) !important;
+}
+
+/* ── Box shadows ── */
+html.dark [style*="box-shadow: 0 1px 4px rgba(0,0,0,0.08)"],
+html.dark [style*="box-shadow: 0 2px 8px rgba(0,0,0,0.06)"],
+html.dark [style*="box-shadow: 0 4px 16px rgba(0,0,0,0.06)"] {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ── Form inputs and textareas ── */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: var(--text-muted) !important;
+}
+
+/* ── Specific component fixes ── */
+
+/* SubjectCard white background */
+html.dark [style*="background: white"][style*="border-radius: 16px"],
+html.dark [style*="background: white"][style*="borderRadius: 16px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Topic cards */
+html.dark [style*="background: white"][style*="border-radius: 10px"],
+html.dark [style*="background: white"][style*="borderRadius: 10px"],
+html.dark [style*="background: white"][style*="border-radius: 12px"],
+html.dark [style*="background: white"][style*="borderRadius: 12px"],
+html.dark [style*="background: white"][style*="border-radius: 14px"],
+html.dark [style*="background: white"][style*="borderRadius: 14px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Dashboard streak banner - keep its amber color but fix text */
+html.dark [style*="background: #fff7ed"] {
+  background: #2d1f0a !important;
+}
+
+/* Analytics page white cards */
+html.dark [style*="background: white"][style*="border: 0.5px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Stat cards on SubjectPage */
+html.dark [style*="background: white"][style*="box-shadow"] {
+  background: var(--bg-card) !important;
+}
+
+/* Option buttons in quiz */
+html.dark [style*="background: white"][style*="border-radius: 10px"][style*="cursor: pointer"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Progress track gray background */
+html.dark [style*="background: #f3f4f6"][style*="border-radius: 6px"],
+html.dark [style*="background: #f3f4f6"][style*="border-radius: 3px"],
+html.dark [style*="background: #e5e7eb"][style*="border-radius"] {
+  background: var(--border-color) !important;
+}
+
+/* Study plan day cards */
+html.dark [style*="background: white"][style*="border-radius: 12px"][style*="overflow"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Task cards inside study plan */
+html.dark [style*="background: #f8fafc"][style*="border-radius: 10px"] {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Concept map canvas */
+html.dark [style*="background: white"][style*="border-radius: 16px"][style*="overflow: hidden"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Recommended next banner (blue tint) — keep color but fix in dark */
+html.dark [style*="background: #eff6ff"] {
+  background: #1a2744 !important;
+  border-color: #2d4a8a !important;
+}
+
+/* AI box sections */
+html.dark [style*="background: #fafafa"] {
+  background: var(--bg-secondary) !important;
+}
+
+/* Theory body text */
+html.dark [style*="padding: 32px"] {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Weak topic badge (red) — keep colors */
+html.dark [style*="background: #fef2f2"] {
+  background: #2d1010 !important;
+}
+html.dark [style*="background: #dcfce7"] {
+  background: #0d2d1a !important;
+}
+html.dark [style*="background: #fffbeb"] {
+  background: #2d2005 !important;
+}
+html.dark [style*="background: #eef2ff"] {
+  background: #1a1d3d !important;
+}
+html.dark [style*="background: #f0fdf4"] {
+  background: #0a2318 !important;
+}
+html.dark [style*="background: #fef2f2"] {
+  background: #2d1010 !important;
+}
+
+/* =========================================
+   TOPICPAGE DARK MODE — style object fixes
+   These target the specific class/id injected
+   by TopicPage's dynamic style tag
+========================================= */
+html.dark {
+  /* Theory card */
+  --tp-theory-bg:      var(--bg-card);
+  --tp-theory-border:  var(--border-color);
+  --tp-para-color:     var(--text-primary);
+  --tp-ai-bg:          var(--bg-secondary);
+  --tp-ai-title:       var(--text-primary);
+  --tp-ai-input-bg:    var(--bg-input);
+  --tp-ai-answer-bg:   var(--bg-secondary);
+  --tp-ai-answer-color:var(--text-primary);
+  --tp-test-bg:        var(--bg-card);
+  --tp-q-box-bg:       var(--bg-secondary);
+  --tp-q-text-color:   var(--text-primary);
+  --tp-option-bg:      var(--bg-secondary);
+  --tp-report-bg:      var(--bg-card);
+  --tp-gen-bg:         var(--bg-card);
+  --tp-gen-title:      var(--text-primary);
+  --tp-gen-sub:        var(--text-secondary);
+  --tp-start-title:    var(--text-primary);
+  --tp-start-sub:      var(--text-secondary);
+  --tp-start-meta-bg:  var(--bg-secondary);
+  --tp-start-num:      var(--text-primary);
+  --tp-tab-border:     var(--border-color);
+  --tp-tab-active-bg:  var(--bg-secondary);
+  --tp-breadcrumb:     var(--text-muted);
+  --tp-title-color:    var(--text-primary);
+}
+
+/* =========================================
+   TOPICPAGE QUIZ OPTIONS — DARK MODE FIX
+   
+   The quiz option divs use inline style
+   background:"white" which we override here.
+   We target by their specific structure:
+   flex + padding + borderRadius + cursor combo.
+=========================================*/
+
+/* Quiz option rows — unselected state */
+html.dark div[style*="border-radius: 10px"][style*="cursor: pointer"][style*="background: white"],
+html.dark div[style*="borderRadius: 10px"][style*="cursor: pointer"][style*="background: white"] {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Quiz option text spans */
+html.dark div[style*="border-radius: 10px"][style*="cursor: pointer"] > span:last-child {
+  color: var(--text-primary) !important;
+}
+
+/* Option letter circles — unselected */
+html.dark div[style*="border-radius: 10px"][style*="cursor: pointer"] > span:first-child {
+  background: var(--bg-hover) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Report cards in results — white background */
+html.dark div[style*="border-radius: 12px"][style*="background: white"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Report option rows — unselected (transparent background) */
+html.dark div[style*="border: 1px solid #e5e7eb"][style*="border-radius: 8px"]:not([style*="background: #dc"]):not([style*="background: #22"]) {
+  border-color: var(--border-color) !important;
+}
+
+/* Report option text */
+html.dark div[style*="border-radius: 8px"][style*="border: 1px solid"] > span:nth-child(2) {
+  color: var(--text-primary) !important;
+}
+
+/* Question number badge text */
+html.dark h3[style*="color: #111827"] {
+  color: var(--text-primary) !important;
+}
+
+/* Previous attempt banner text */
+html.dark p[style*="color: #374151"],
+html.dark h3[style*="color: #374151"] {
+  color: var(--text-secondary) !important;
+}
+
+html.dark p[style*="color: #111827"],
+html.dark h3[style*="color: #111827"],
+html.dark span[style*="color: #111827"] {
+  color: var(--text-primary) !important;
+}
+
+html.dark p[style*="color: #6b7280"],
+html.dark span[style*="color: #6b7280"] {
+  color: var(--text-muted) !important;
+}
+
+html.dark p[style*="color: #9ca3af"],
+html.dark span[style*="color: #9ca3af"] {
+  color: var(--text-muted) !important;
+}
+
+/* Next button disabled state */
+html.dark button[style*="background: #e5e7eb"] {
+  background: var(--bg-secondary) !important;
+  color: var(--text-muted) !important;
+}
+
+/* Progress track */
+html.dark div[style*="background: #e5e7eb"][style*="border-radius: 6px"] {
+  background: var(--border-color) !important;
+}
+
+/* Test card white background */
+html.dark div[style*="background: white"][style*="border-radius: 16px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Start meta box */
+html.dark div[style*="background: #f8fafc"][style*="border-radius: 12px"] {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* =========================================
+   CONCEPT MAP — RESET VIEW BUTTON FIX
+=========================================*/
+html.dark button[style*="background: white"][style*="border-radius: 8px"] {
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Zoom control buttons */
+html.dark div[style*="position: absolute"][style*="bottom: 16px"] button {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+html.dark div[style*="position: absolute"][style*="bottom: 16px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* =========================================
+   ANALYTICS PAGE — TEXT FIX
+=========================================*/
+html.dark [style*="color: var(--color-text-primary)"] {
+  color: var(--text-primary) !important;
+}
+
+html.dark [style*="color: #185FA5"] {
+  color: #60a5fa !important;
+}
+
+/* Analytics metric cards */
+html.dark [style*="background: white"][style*="border: 0.5px solid"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Analytics chart containers */
+html.dark [style*="background: white"][style*="padding: 24px"] {
+  background: var(--bg-card) !important;
+}
+
+html.dark [style*="background: white"][style*="padding: 20px"] {
+  background: var(--bg-card) !important;
+}
+
+/* Topic list in analytics */
+html.dark [style*="background: white"][style*="border-radius: 10px"] {
+  background: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* =========================================
+   GENERAL — catch-all for remaining whites
+=========================================*/
+html.dark [style*="color: #1f2937"] { color: var(--text-primary) !important; }
+html.dark [style*="color: #0f172a"] { color: var(--text-primary) !important; }
+html.dark [style*="color: #1e293b"] { color: var(--text-primary) !important; }
