@@ -10,7 +10,7 @@ const axios          = require("axios");
 const router         = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "http://localhost:5001";
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || "https://ai-edtech-backend-r2y7.onrender.com";
 
 // Topic structure mirrors your SubjectsData.js
 // Used server-side to build the feature payload for Flask

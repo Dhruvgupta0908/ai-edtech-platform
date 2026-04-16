@@ -27,9 +27,9 @@ export default function ProfilePage() {
     if (!isLoggedIn()) { navigate("/login"); return; }
 
     Promise.all([
-      axios.get("http://localhost:5000/api/auth/me",        { headers: authHeader() }),
-      axios.get("http://localhost:5000/api/streak",         { headers: authHeader() }),
-      axios.get("http://localhost:5000/api/analytics",      { headers: authHeader() }),
+      axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/auth/me",        { headers: authHeader() }),
+      axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/streak",         { headers: authHeader() }),
+      axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics",      { headers: authHeader() }),
     ]).then(([userRes, streakRes, analyticsRes]) => {
       setUser(userRes.data);
       setStreak(streakRes.data);
@@ -50,7 +50,7 @@ export default function ProfilePage() {
     }
     setPwLoading(true); setPwMsg({ text: "", type: "" });
     try {
-      await axios.post("http://localhost:5000/api/auth/change-password",
+      await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/auth/change-password",
         { email: user.email, oldPassword, newPassword },
         { headers: authHeader() });
       setPwMsg({ text: "Password updated successfully! 🎉", type: "success" });

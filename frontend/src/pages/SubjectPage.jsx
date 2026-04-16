@@ -22,7 +22,7 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
   const startSession = async () => {
     setStep("loading");
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/socratic",
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/socratic",
         { topic: topic.title, subject: subjectName, score, mode: "topic_review", context: `Score: ${score}% on "${topic.title}".` },
         { headers: authHeader() });
       setTutorMsg(res.data.tutorQuestion); setStep("question");
@@ -33,7 +33,7 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
     if (!userReply.trim()) return;
     setFollowLoading(true);
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/socratic",
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/socratic",
         { topic: topic.title, subject: subjectName, score, mode: "follow_up", context: `Tutor: "${tutorMsg}". Student: "${userReply}".` },
         { headers: authHeader() });
       setFollowUp(res.data.tutorQuestion);
@@ -145,14 +145,14 @@ function SubjectPage() {
   const [mlPredictions,  setMlPredictions]  = useState([]);
 
   const fetchProgress = useCallback(() => {
-    axios.get("http://localhost:5000/api/analytics", { headers: authHeader() })
+    axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics", { headers: authHeader() })
       .then(res => {
         const topicList = res.data.topics?.[subjectName] || [];
         setProgressData(topicList);
         const topicScores = {};
         topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
         if (Object.keys(topicScores).length > 0) {
-          axios.post("http://localhost:5000/api/ml/predict-struggle", { subject: subjectName, topicScores }, { headers: authHeader() })
+          axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ml/predict-struggle", { subject: subjectName, topicScores }, { headers: authHeader() })
             .then(mlRes => setMlPredictions(mlRes.data.predictions || []))
             .catch(() => setMlPredictions([]));
         }

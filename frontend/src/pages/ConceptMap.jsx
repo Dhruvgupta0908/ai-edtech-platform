@@ -85,7 +85,7 @@ export default function ConceptMap() {
   const lastMouse  = useRef({ x: 0, y: 0 });
 
   const fetchScores = useCallback(() => {
-    axios.get("http://localhost:5000/api/analytics", { headers: authHeader() })
+    axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics", { headers: authHeader() })
       .then(res => {
         const topicList = res.data.topics?.[subjectName] || [];
         const map = {};

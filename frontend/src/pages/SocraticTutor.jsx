@@ -9,7 +9,7 @@ function SocraticTutor({ topic, question, studentAnswer, allOptions, onDismiss }
   const askTutor = async () => {
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/socratic", {
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/socratic", {
         topic,
         question,
         studentAnswer,

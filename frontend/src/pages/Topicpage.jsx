@@ -17,7 +17,7 @@ const ExplainBox = ({ topic, subject, ans }) => {
   const fetchExplanation = async () => {
     setStatus("loading");
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/explain-mistake", {
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/explain-mistake", {
         topic, subject,
         question:      ans.question,
         chosenOption:  ans.options[ans.chosenIndex],
@@ -159,7 +159,7 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
   const generate = async () => {
     setPhase("loading"); setError("");
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/generate-questions", {
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/generate-questions", {
         topic: topicData.title, subject: subjectName,
         theory: topicData.theory,
         existingQs: existingQuestions.map(q => q.question), count: 5
@@ -385,7 +385,7 @@ const TopicPage = () => {
   const [showPrevious,      setShowPrevious]      = useState(false);
 
   useEffect(() => {
-    axios.get(`http://localhost:5000/api/topics/${subjectName}/${topicName}`)
+    axios.get(`https://ai-edtech-backend-r2y7.onrender.com/api/topics/${subjectName}/${topicName}`)
       .then(res => setTopicData(res.data))
       .catch(err => console.log(err));
   }, [subjectName, topicName]);
@@ -399,7 +399,7 @@ const TopicPage = () => {
     const fetchLastAttempt = async () => {
       try {
         const res = await axios.get(
-          `http://localhost:5000/api/progress/${subjectName}/${topicName}`,
+          `https://ai-edtech-backend-r2y7.onrender.com/api/progress/${subjectName}/${topicName}`,
           { headers: authHeader() }
         );
         if (res.data.found && res.data.lastAttempt?.length > 0) {
@@ -418,12 +418,12 @@ const TopicPage = () => {
 
   const updateProgress = async (section, scoreValue, answersToSave) => {
     try {
-      await axios.post("http://localhost:5000/api/progress",
+      await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/progress",
         { subject: subjectName, topic: topicName, section, score: scoreValue, answers: answersToSave },
         { headers: authHeader() });
     } catch (err) { console.log("Progress save error:", err); }
     try {
-      await axios.post("http://localhost:5000/api/streak", {}, { headers: authHeader() });
+      await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/streak", {}, { headers: authHeader() });
     } catch (err) { console.log("Streak update error:", err); }
   };
 
@@ -450,7 +450,7 @@ const TopicPage = () => {
     if (!aiQuestion.trim()) return;
     setLoadingAI(true); setAiAnswer("");
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/ask",
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/ai/ask",
         { topic: topicData.title, question: aiQuestion },
         { headers: authHeader() });
       setAiAnswer(res.data?.answer || "No answer received");

@@ -73,7 +73,7 @@ export default function StudyPlan() {
   const [expandedDays, setExpandedDays] = useState({});
 
   useEffect(() => {
-    axios.get("http://localhost:5000/api/analytics", { headers: authHeader() })
+    axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics", { headers: authHeader() })
       .then(res => {
         const { topics } = res.data;
         const weak = [], attempted = new Set();
@@ -96,7 +96,7 @@ export default function StudyPlan() {
   const generatePlan = async () => {
     setPhase("loading"); setError("");
     try {
-      const res = await axios.post("http://localhost:5000/api/ai/study-plan",
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/study-plan",
         { weakTopics, notStarted: notStarted.slice(0, 20), targetDays, examGoal },
         { headers: authHeader() });
       setPlan(res.data.plan);

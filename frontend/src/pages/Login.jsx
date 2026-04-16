@@ -19,7 +19,7 @@ function Login() {
     setLoading(true);
     setError("");
     try {
-      const response = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/auth/login", formData);
+      const response = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/auth/login", formData);
       const { token, name, email } = response.data;
 
       // Save token + name + email so getUserName() works everywhere
