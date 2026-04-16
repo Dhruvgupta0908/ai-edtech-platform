@@ -13,7 +13,7 @@ function Sidebar() {
   useEffect(() => {
     if (!isLoggedIn()) return;
     axios
-      .get("http://localhost:5000/api/streak", { headers: authHeader() })
+      .get("https://ai-edtech-backend-r2y7.onrender.com/api/streak", { headers: authHeader() })
       .then(res => setStreak(res.data))
       .catch(() => {});
   }, []);

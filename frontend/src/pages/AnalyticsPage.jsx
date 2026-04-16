@@ -130,7 +130,7 @@ const AnalyticsPage = () => {
   const [loading,         setLoading]         = useState(true);
 
   useEffect(() => {
-    axios.get("http://localhost:5000/api/analytics", { headers: authHeader() })
+    axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics", { headers: authHeader() })
       .then(res => {
         setAnalytics(res.data);
         if (res.data.subjects.length > 0) setSelectedSubject(res.data.subjects[0].subject);
