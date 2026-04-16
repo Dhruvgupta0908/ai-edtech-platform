@@ -450,7 +450,7 @@ const TopicPage = () => {
     if (!aiQuestion.trim()) return;
     setLoadingAI(true); setAiAnswer("");
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/ai/ask",
+      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/ask",
         { topic: topicData.title, question: aiQuestion },
         { headers: authHeader() });
       setAiAnswer(res.data?.answer || "No answer received");
