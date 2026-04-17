@@ -178,9 +178,12 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       }
     });
 
-    if (flaskPayload.length === 0) {
-      return res.json({ predictions: [], reason: "not_enough_data" });
-    }
+   if (!flaskPayload || flaskPayload.length === 0) {
+  return res.json({
+    predictions: [],
+    reason: "no_valid_topics"
+  });
+}
 
     // Wake up ML service before prediction (IMPORTANT)
 try {

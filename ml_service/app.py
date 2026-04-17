@@ -67,9 +67,10 @@ def predict():
     if model is None:
         return jsonify({"error": "Model not loaded. Run train_model.py first."}), 503
 
-    data = request.get_json()
-    if not data or "topics" not in data:
-        return jsonify({"error": "Missing topics in request body"}), 400
+    data = request.get_json(force=True, silent=True)
+
+    if not data or "topics" not in data or not isinstance(data["topics"], list):
+        return jsonify({"error": "Invalid input"}), 400
 
     predictions = []
 
