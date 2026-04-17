@@ -182,16 +182,34 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       return res.json({ predictions: [], reason: "not_enough_data" });
     }
 
+    // Wake up ML service before prediction (IMPORTANT)
+try {
+  await axios.get(`${ML_SERVICE_URL}/health`, { timeout: 10000 });
+  console.log("ML service is awake");
+} catch (err) {
+  console.log("ML wake-up failed (may still continue)");
+}
+
     // Call Flask ML service
     // timeout: 25000 because Render free tier can cold-start in ~15-20s
-    const mlResponse = await axios.post(
+   // Call Flask ML service with retry (FIXED)
+let mlResponse;
+
+for (let i = 0; i < 2; i++) {
+  try {
+    mlResponse = await axios.post(
       `${ML_SERVICE_URL}/predict`,
       { subject: normalizedSubject, topics: flaskPayload },
       { timeout: 25000, headers: { "Content-Type": "application/json" } }
     );
+    break; // success
+  } catch (err) {
+    console.log(`ML attempt ${i + 1} failed`);
+    if (i === 1) throw err; // fail after 2 attempts
+  }
+}
 
-    return res.json({ predictions: mlResponse.data.predictions });
-
+return res.json({ predictions: mlResponse.data.predictions });
   } catch (err) {
     // Log the real error for debugging in Render logs
     if (err.code === "ECONNREFUSED" || err.code === "ETIMEDOUT" || err.code === "ECONNABORTED") {
@@ -200,7 +218,17 @@ router.post("/predict-struggle", authMiddleware, async (req, res) => {
       console.error("ML route error:", err.response?.data || err.message);
     }
     // Always return gracefully — never break the subject page
-    return res.json({ predictions: [], reason: "ml_service_unavailable" });
+    return res.json({
+  predictions: Object.entries(topicScores || {})
+    .filter(([_, score]) => score <= 30)
+    .map(([slug]) => ({
+      title: slug.replace(/-/g, " "),
+      will_struggle: true,
+      confidence: 0.8,
+      source: "fallback"
+    })),
+  reason: "fallback_used"
+});
   }
 });
 

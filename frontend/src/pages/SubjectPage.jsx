@@ -208,6 +208,7 @@ function SubjectPage() {
   }, [subjectName, mlPredictions.length]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProgress(true);
     return () => {
       if (mlAbortRef.current) mlAbortRef.current.abort();
