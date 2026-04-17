@@ -161,8 +161,7 @@ function SubjectPage() {
 
   const mlAbortRef = useRef(null);
 
-  const fetchProgress = useCallback((isInitial = false) => {
-    // Only show loading spinner on the first fetch to prevent UI flickering on window focus
+ const fetchProgress = useCallback((isInitial = false) => {
     if (isInitial && mlPredictions.length === 0) setMlLoading(true);
 
     axios.get(`${BASE_URL}/api/analytics`, { headers: authHeader() })
@@ -170,36 +169,49 @@ function SubjectPage() {
         const topicList = res.data.topics?.[subjectName] || [];
         setProgressData(topicList);
 
-        if (topicList.length === 0) return;
+        if (topicList.length === 0) {
+            setMlLoading(false);
+            return;
+        }
 
         const topicScores = {};
         topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
 
-        // Cancel any previous ML request
         if (mlAbortRef.current) mlAbortRef.current.abort();
         mlAbortRef.current = new AbortController();
 
+        // ─── START ML REQUEST ───
         axios.post(
           `${BASE_URL}/api/ml/predict-struggle`,
           { subject: subjectName, topicScores },
           {
             headers: authHeader(),
             signal: mlAbortRef.current.signal,
-            timeout: 60000, // Increased to 60s for Render cold starts
+            timeout: 90000, // <--- INCREASED TO 90 SECONDS
           }
         )
           .then(mlRes => {
             setMlPredictions(mlRes.data.predictions || []);
+            setMlLoading(false);
           })
           .catch(err => {
             if (axios.isCancel(err)) return;
-            console.log("ML prediction delay/error:", err.message);
-            // We DO NOT set predictions to [] here. 
-            // We keep whatever we had before to prevent the UI from disappearing.
-          })
-          .finally(() => setMlLoading(false));
+            
+            // If it's a timeout, we keep mlLoading as true for a bit longer 
+            // or show a "Service Waking Up" message.
+            console.error("ML Service Error:", err.message);
+            
+            if (err.code === 'ECONNABORTED') {
+                console.log("Service is taking long to wake up...");
+            }
+            
+            setMlLoading(false); 
+          });
       })
-      .catch(err => console.log("Analytics error:", err));
+      .catch(err => {
+        console.log("Analytics error:", err);
+        setMlLoading(false);
+      });
   }, [subjectName, mlPredictions.length]);
 
   useEffect(() => {
