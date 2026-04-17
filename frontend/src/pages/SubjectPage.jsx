@@ -1,8 +1,4 @@
 // frontend/src/pages/SubjectPage.jsx
-// FIXED — ML predictions are fetched NON-BLOCKING.
-// The page loads instantly with topic data.
-// ML predictions arrive in the background and update the UI silently.
-
 import { useParams, useNavigate } from "react-router-dom";
 import subjectsData from "../data/SubjectsData";
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -107,8 +103,7 @@ function MLPredictionBanner({ predictions, loading }) {
   const [expanded, setExpanded] = useState(false);
   const atRisk = predictions.filter(p => p.will_struggle);
 
-  /* While loading show a subtle skeleton */
-  if (loading) return (
+  if (loading && predictions.length === 0) return (
     <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "14px 20px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
       <div style={{ width: "16px", height: "16px", border: "2px solid var(--border-color)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
       <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted)" }}>Analysing your risk topics in the background...</p>
@@ -164,12 +159,12 @@ function SubjectPage() {
   const [mlPredictions,  setMlPredictions]  = useState([]);
   const [mlLoading,      setMlLoading]      = useState(false);
 
-  // Ref to cancel in-flight ML request if component unmounts
   const mlAbortRef = useRef(null);
 
-  /* ── Fetch analytics first (fast), then ML in background (slow) ── */
-  const fetchProgress = useCallback(() => {
-    // Step 1: fetch analytics immediately — this is fast
+  const fetchProgress = useCallback((isInitial = false) => {
+    // Only show loading spinner on the first fetch to prevent UI flickering on window focus
+    if (isInitial && mlPredictions.length === 0) setMlLoading(true);
+
     axios.get(`${BASE_URL}/api/analytics`, { headers: authHeader() })
       .then(res => {
         const topicList = res.data.topics?.[subjectName] || [];
@@ -177,15 +172,10 @@ function SubjectPage() {
 
         if (topicList.length === 0) return;
 
-        // Step 2: build topic scores map
         const topicScores = {};
         topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
 
-        // Step 3: fire ML request in background — DON'T await it
-        // Page is already showing, this just enriches it when ready
-        setMlLoading(true);
-
-        // Cancel any previous in-flight ML request
+        // Cancel any previous ML request
         if (mlAbortRef.current) mlAbortRef.current.abort();
         mlAbortRef.current = new AbortController();
 
@@ -195,34 +185,35 @@ function SubjectPage() {
           {
             headers: authHeader(),
             signal: mlAbortRef.current.signal,
-            // Long timeout — Render free tier can cold-start in 20-30s
-            timeout: 35000,
+            timeout: 60000, // Increased to 60s for Render cold starts
           }
         )
           .then(mlRes => {
             setMlPredictions(mlRes.data.predictions || []);
           })
           .catch(err => {
-            if (axios.isCancel(err)) return; // component unmounted, ignore
-            console.log("ML prediction unavailable:", err.message);
-            setMlPredictions([]);
+            if (axios.isCancel(err)) return;
+            console.log("ML prediction delay/error:", err.message);
+            // We DO NOT set predictions to [] here. 
+            // We keep whatever we had before to prevent the UI from disappearing.
           })
           .finally(() => setMlLoading(false));
       })
       .catch(err => console.log("Analytics error:", err));
-  }, [subjectName]);
+  }, [subjectName, mlPredictions.length]);
 
   useEffect(() => {
-    fetchProgress();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchProgress(true);
     return () => {
-      // Cancel ML request if user navigates away
       if (mlAbortRef.current) mlAbortRef.current.abort();
     };
-  }, [fetchProgress]);
+  }, [subjectName]); // Remove fetchProgress from dependency to prevent infinite loops
 
   useEffect(() => {
-    window.addEventListener("focus", fetchProgress);
-    return () => window.removeEventListener("focus", fetchProgress);
+    const handleFocus = () => fetchProgress(false);
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, [fetchProgress]);
 
   if (!subject) return <h2 style={{ color: "var(--text-primary)" }}>Subject Not Found</h2>;
@@ -244,7 +235,6 @@ function SubjectPage() {
   return (
     <div style={{ padding: "40px", maxWidth: "860px", margin: "0 auto" }}>
 
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
         <div>
           <h1 style={{ margin: "0 0 4px", fontSize: "28px", fontWeight: 700, color: "var(--text-primary)" }}>{subject.title}</h1>
@@ -256,7 +246,6 @@ function SubjectPage() {
         </button>
       </div>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
         {[{ label: "Avg score", value: `${avgScore}%` }, { label: "Attempted", value: `${attempted}/${subject.topics.length}` }, { label: "Strong", value: strong }, { label: "Weak", value: weak }].map((s, i) => (
           <div key={i} style={{ background: "var(--bg-card)", borderRadius: "10px", padding: "14px 16px", boxShadow: "var(--shadow-sm)", textAlign: "center", border: "1px solid var(--border-color)" }}>
@@ -266,12 +255,10 @@ function SubjectPage() {
         ))}
       </div>
 
-      {/* ML Banner — shows spinner while loading, results when ready */}
       {attempted > 0 && (
         <MLPredictionBanner predictions={mlPredictions} loading={mlLoading} />
       )}
 
-      {/* Recommendation */}
       {nextTopic && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "16px 20px", marginBottom: "28px" }}>
           <div>
