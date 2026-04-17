@@ -103,10 +103,11 @@ function MLPredictionBanner({ predictions, loading }) {
   const [expanded, setExpanded] = useState(false);
   const atRisk = predictions.filter(p => p.will_struggle);
 
+  // KEEP THE BANNER VISIBLE WHILE LOADING TO PREVENT DISAPPEARING
   if (loading && predictions.length === 0) return (
     <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "14px 20px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
       <div style={{ width: "16px", height: "16px", border: "2px solid var(--border-color)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
-      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted)" }}>Analysing your risk topics in the background...</p>
+      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted)" }}>Analysing your risk topics... (ML service is waking up)</p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
@@ -161,7 +162,7 @@ function SubjectPage() {
 
   const mlAbortRef = useRef(null);
 
- const fetchProgress = useCallback((isInitial = false) => {
+  const fetchProgress = useCallback((isInitial = false) => {
     if (isInitial && mlPredictions.length === 0) setMlLoading(true);
 
     axios.get(`${BASE_URL}/api/analytics`, { headers: authHeader() })
@@ -180,14 +181,14 @@ function SubjectPage() {
         if (mlAbortRef.current) mlAbortRef.current.abort();
         mlAbortRef.current = new AbortController();
 
-        // ─── START ML REQUEST ───
+        // INCREASED TIMEOUT TO HANDLE RENDER COLD STARTS
         axios.post(
           `${BASE_URL}/api/ml/predict-struggle`,
           { subject: subjectName, topicScores },
           {
             headers: authHeader(),
             signal: mlAbortRef.current.signal,
-            timeout: 90000, // <--- INCREASED TO 90 SECONDS
+            timeout: 95000, 
           }
         )
           .then(mlRes => {
@@ -196,15 +197,7 @@ function SubjectPage() {
           })
           .catch(err => {
             if (axios.isCancel(err)) return;
-            
-            // If it's a timeout, we keep mlLoading as true for a bit longer 
-            // or show a "Service Waking Up" message.
             console.error("ML Service Error:", err.message);
-            
-            if (err.code === 'ECONNABORTED') {
-                console.log("Service is taking long to wake up...");
-            }
-            
             setMlLoading(false); 
           });
       })
@@ -215,12 +208,11 @@ function SubjectPage() {
   }, [subjectName, mlPredictions.length]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProgress(true);
     return () => {
       if (mlAbortRef.current) mlAbortRef.current.abort();
     };
-  }, [subjectName]); // Remove fetchProgress from dependency to prevent infinite loops
+  }, [subjectName]); 
 
   useEffect(() => {
     const handleFocus = () => fetchProgress(false);
