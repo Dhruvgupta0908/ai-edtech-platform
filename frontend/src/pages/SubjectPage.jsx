@@ -1,17 +1,23 @@
 // frontend/src/pages/SubjectPage.jsx
-// FIXED — all hardcoded inline colors replaced with CSS variables for dark mode
+// FIXED — ML predictions are fetched NON-BLOCKING.
+// The page loads instantly with topic data.
+// ML predictions arrive in the background and update the UI silently.
 
 import { useParams, useNavigate } from "react-router-dom";
 import subjectsData from "../data/SubjectsData";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import axios from "axios";
 import { authHeader } from "../utils/auth";
 
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+
 const slugify = (text) =>
   text.toLowerCase()
+    .replace(/&/g, "and")
     .replace(/\//g, "-").replace(/\s+/g, "-")
     .replace(/[^\w-]/g, "").replace(/--+/g, "-");
 
+/* ─── Socratic Tutor Panel ─── */
 function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
   const [step, setStep]                   = useState("idle");
   const [tutorMsg, setTutorMsg]           = useState("");
@@ -22,7 +28,7 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
   const startSession = async () => {
     setStep("loading");
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/socratic",
+      const res = await axios.post(`${BASE_URL}/api/ai/socratic`,
         { topic: topic.title, subject: subjectName, score, mode: "topic_review", context: `Score: ${score}% on "${topic.title}".` },
         { headers: authHeader() });
       setTutorMsg(res.data.tutorQuestion); setStep("question");
@@ -33,7 +39,7 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
     if (!userReply.trim()) return;
     setFollowLoading(true);
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/socratic",
+      const res = await axios.post(`${BASE_URL}/api/ai/socratic`,
         { topic: topic.title, subject: subjectName, score, mode: "follow_up", context: `Tutor: "${tutorMsg}". Student: "${userReply}".` },
         { headers: authHeader() });
       setFollowUp(res.data.tutorQuestion);
@@ -96,10 +102,22 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
   );
 }
 
-function MLPredictionBanner({ predictions }) {
+/* ─── ML Prediction Banner ─── */
+function MLPredictionBanner({ predictions, loading }) {
   const [expanded, setExpanded] = useState(false);
   const atRisk = predictions.filter(p => p.will_struggle);
+
+  /* While loading show a subtle skeleton */
+  if (loading) return (
+    <div style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "14px 20px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "10px" }}>
+      <div style={{ width: "16px", height: "16px", border: "2px solid var(--border-color)", borderTopColor: "#f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+      <p style={{ margin: 0, fontSize: "13px", color: "var(--text-muted)" }}>Analysing your risk topics in the background...</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
   if (atRisk.length === 0) return null;
+
   return (
     <div style={{ background: "var(--bg-secondary)", border: "1.5px solid #fde68a", borderRadius: "12px", padding: "16px 20px", marginBottom: "24px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
@@ -135,6 +153,7 @@ function MLPredictionBanner({ predictions }) {
   );
 }
 
+/* ─── Main Subject Page ─── */
 function SubjectPage() {
   const { subjectName } = useParams();
   const navigate        = useNavigate();
@@ -143,24 +162,64 @@ function SubjectPage() {
   const [progressData,   setProgressData]   = useState([]);
   const [activeTutorKey, setActiveTutorKey] = useState(null);
   const [mlPredictions,  setMlPredictions]  = useState([]);
+  const [mlLoading,      setMlLoading]      = useState(false);
 
+  // Ref to cancel in-flight ML request if component unmounts
+  const mlAbortRef = useRef(null);
+
+  /* ── Fetch analytics first (fast), then ML in background (slow) ── */
   const fetchProgress = useCallback(() => {
-    axios.get("https://ai-edtech-backend-r2y7.onrender.com/api/analytics", { headers: authHeader() })
+    // Step 1: fetch analytics immediately — this is fast
+    axios.get(`${BASE_URL}/api/analytics`, { headers: authHeader() })
       .then(res => {
         const topicList = res.data.topics?.[subjectName] || [];
         setProgressData(topicList);
+
+        if (topicList.length === 0) return;
+
+        // Step 2: build topic scores map
         const topicScores = {};
         topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
-        if (Object.keys(topicScores).length > 0) {
-          axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ml/predict-struggle", { subject: subjectName, topicScores }, { headers: authHeader() })
-            .then(mlRes => setMlPredictions(mlRes.data.predictions || []))
-            .catch(() => setMlPredictions([]));
-        }
+
+        // Step 3: fire ML request in background — DON'T await it
+        // Page is already showing, this just enriches it when ready
+        setMlLoading(true);
+
+        // Cancel any previous in-flight ML request
+        if (mlAbortRef.current) mlAbortRef.current.abort();
+        mlAbortRef.current = new AbortController();
+
+        axios.post(
+          `${BASE_URL}/api/ml/predict-struggle`,
+          { subject: subjectName, topicScores },
+          {
+            headers: authHeader(),
+            signal: mlAbortRef.current.signal,
+            // Long timeout — Render free tier can cold-start in 20-30s
+            timeout: 35000,
+          }
+        )
+          .then(mlRes => {
+            setMlPredictions(mlRes.data.predictions || []);
+          })
+          .catch(err => {
+            if (axios.isCancel(err)) return; // component unmounted, ignore
+            console.log("ML prediction unavailable:", err.message);
+            setMlPredictions([]);
+          })
+          .finally(() => setMlLoading(false));
       })
-      .catch(err => console.log(err));
+      .catch(err => console.log("Analytics error:", err));
   }, [subjectName]);
 
-  useEffect(() => { fetchProgress(); }, [fetchProgress]);
+  useEffect(() => {
+    fetchProgress();
+    return () => {
+      // Cancel ML request if user navigates away
+      if (mlAbortRef.current) mlAbortRef.current.abort();
+    };
+  }, [fetchProgress]);
+
   useEffect(() => {
     window.addEventListener("focus", fetchProgress);
     return () => window.removeEventListener("focus", fetchProgress);
@@ -185,6 +244,7 @@ function SubjectPage() {
   return (
     <div style={{ padding: "40px", maxWidth: "860px", margin: "0 auto" }}>
 
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
         <div>
           <h1 style={{ margin: "0 0 4px", fontSize: "28px", fontWeight: 700, color: "var(--text-primary)" }}>{subject.title}</h1>
@@ -196,6 +256,7 @@ function SubjectPage() {
         </button>
       </div>
 
+      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
         {[{ label: "Avg score", value: `${avgScore}%` }, { label: "Attempted", value: `${attempted}/${subject.topics.length}` }, { label: "Strong", value: strong }, { label: "Weak", value: weak }].map((s, i) => (
           <div key={i} style={{ background: "var(--bg-card)", borderRadius: "10px", padding: "14px 16px", boxShadow: "var(--shadow-sm)", textAlign: "center", border: "1px solid var(--border-color)" }}>
@@ -205,8 +266,12 @@ function SubjectPage() {
         ))}
       </div>
 
-      <MLPredictionBanner predictions={mlPredictions} />
+      {/* ML Banner — shows spinner while loading, results when ready */}
+      {attempted > 0 && (
+        <MLPredictionBanner predictions={mlPredictions} loading={mlLoading} />
+      )}
 
+      {/* Recommendation */}
       {nextTopic && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "16px 20px", marginBottom: "28px" }}>
           <div>
@@ -236,7 +301,9 @@ function SubjectPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "15px", fontWeight: 500, color: "var(--text-primary)" }}>{topic.title}</span>
-                {isAtRisk && <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" }}>⚠ At Risk</span>}
+                {isAtRisk && (
+                  <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" }}>⚠ At Risk</span>
+                )}
                 {score > 0 && <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "20px", border: `1px solid ${scoreColor}`, color: scoreColor, fontWeight: 500 }}>{score}% · {label}</span>}
                 {score === 0 && !isAtRisk && <span style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>Not started</span>}
               </div>
@@ -253,11 +320,13 @@ function SubjectPage() {
                 </button>
               </div>
             </div>
+
             {score > 0 && (
               <div style={{ height: "4px", background: "var(--border-color)", borderRadius: "4px", marginTop: "10px", overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${score}%`, background: scoreColor, borderRadius: "4px", transition: "width 0.4s ease" }} />
               </div>
             )}
+
             {isAtRisk && (
               <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "11px", color: "#92400e" }}>ML risk:</span>
@@ -267,6 +336,7 @@ function SubjectPage() {
                 <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600 }}>{Math.round(mlPred.confidence * 100)}%</span>
               </div>
             )}
+
             {tutorOpen && <SocraticTutorPanel topic={topic} subjectName={subjectName} score={score} onClose={() => setActiveTutorKey(null)} />}
           </div>
         );
