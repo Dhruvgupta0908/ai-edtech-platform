@@ -1,10 +1,8 @@
 // frontend/src/pages/SubjectPage.jsx
-//
-// PREDICTION STRATEGY:
-//   1. Rule-based predictions run INSTANTLY using local score data (no API call)
-//   2. ML predictions fetch in background (Flask may take 20-30s to wake up)
-//   3. When ML responds, its predictions smoothly REPLACE the rule-based ones
-//   4. User always sees something useful — never waits for risk info
+// FIXED:
+//  1. Rule-based engine now gives NUANCED per-topic risk scores (not flat 60% for all)
+//  2. lastScore rule removed — it was causing every subsequent topic to get flagged
+//  3. Risk only assigned when there are DIRECT prerequisite score signals
 
 import { useParams, useNavigate } from "react-router-dom";
 import subjectsData from "../data/SubjectsData";
@@ -22,100 +20,109 @@ const slugify = (text) =>
 
 
 /* ══════════════════════════════════════════════════════
-   RULE-BASED RISK ENGINE
-   Runs purely on local data — zero latency.
-   Returns same shape as ML: [{ title, will_struggle, confidence, source }]
-══════════════════════════════════════════════════════ */
-function computeRuleBasedPredictions(topics, scoreMap) {
-  // scoreMap: { "Topic Title": score (0-100) }
-  // Only predict for unattempted topics (score === undefined)
+   RULE-BASED RISK ENGINE  (fixed)
 
-  const priorScores = [];
+   Key fixes vs previous version:
+   - Removed the "lastScore <= 30 → all future topics = 60%" rule.
+     That was wrong — it flagged EVERYTHING after one weak topic.
+   - Each topic now scored individually using ONLY its own prerequisites
+     and position. No flat confidence fallback.
+   - Topics with NO attempted prerequisites get no score at all (nothing
+     to base a prediction on).
+   - Confidence is proportional to actual risk signals, not capped to 0.6.
+══════════════════════════════════════════════════════ */
+function computeRuleBasedPredictions(topics, scoreByTitle) {
+  const priorScores = [];   // scores in order of topic position
   const predictions = [];
 
   topics.forEach((topic, position) => {
-    const score = scoreMap[topic.title];
+    const score = scoreByTitle[topic.title];
 
     if (score !== undefined) {
-      // Topic already attempted — add to prior history
       priorScores.push(score);
-      return;
+      return; // already attempted — skip prediction
     }
 
-    // Only predict if student has some history
+    // Need at least one prior score to make any prediction
     if (priorScores.length === 0) return;
 
-    // ── Feature 1: prerequisite scores ──
+    // ── Signal 1: Direct prerequisite scores ──
     const prereqScores = (topic.prerequisites || [])
-      .map(prereqTitle => scoreMap[prereqTitle])
+      .map(prereqTitle => scoreByTitle[prereqTitle])
       .filter(s => s !== undefined);
+
+    // If this topic has prerequisites but NONE have been attempted,
+    // we can't meaningfully predict — skip it
+    const hasPrereqs   = (topic.prerequisites || []).length > 0;
+    const noPrereqData = hasPrereqs && prereqScores.length === 0;
+    if (noPrereqData) return;
 
     const prereqAvg = prereqScores.length > 0
       ? prereqScores.reduce((a, b) => a + b, 0) / prereqScores.length
       : null;
-
     const prereqMin = prereqScores.length > 0
       ? Math.min(...prereqScores)
       : null;
 
-    // ── Feature 2: prior struggle rate ──
-    const priorStruggleRate = priorScores.length > 0
-      ? priorScores.filter(s => s < 40).length / priorScores.length
-      : 0;
+    // ── Signal 2: Prior struggle rate (in this subject) ──
+    const struggles = priorScores.filter(s => s < 40).length;
+    const priorStruggleRate = struggles / priorScores.length;
 
-    // ── Feature 3: position penalty ──
-    const positionPenalty = position >= 7;
-
-    // ── Rule-based risk scoring ──
+    // ── Build risk score from individual signals ──
     let riskScore = 0;
-    let reasons   = [];
+    const reasons = [];
 
-    // Weak prerequisites are the strongest signal
-    if (prereqMin !== null && prereqMin < 40) {
-      riskScore += 0.45;
-      reasons.push(`prerequisite score ${Math.round(prereqMin)}%`);
-    } else if (prereqMin !== null && prereqMin < 60) {
-      riskScore += 0.20;
-      reasons.push(`moderate prerequisite score`);
+    // Prerequisites are the primary signal
+    if (prereqMin !== null) {
+      if (prereqMin < 40) {
+        riskScore += 0.50;
+        reasons.push(`weak prerequisite (${Math.round(prereqMin)}%)`);
+      } else if (prereqMin < 55) {
+        riskScore += 0.25;
+        reasons.push(`shaky prerequisite (${Math.round(prereqMin)}%)`);
+      } else if (prereqMin < 70) {
+        riskScore += 0.10;
+      }
     }
 
+    // Average prereq score adds additional signal
     if (prereqAvg !== null && prereqAvg < 50) {
-      riskScore += 0.20;
-    }
-
-    // Past struggle pattern
-    if (priorStruggleRate >= 0.5) {
-      riskScore += 0.30;
-      reasons.push(`struggled in ${Math.round(priorStruggleRate * 100)}% of prior topics`);
-    } else if (priorStruggleRate >= 0.3) {
       riskScore += 0.15;
     }
 
-    // Late-sequence topics are harder
-    if (positionPenalty && riskScore > 0) {
+    // Pattern of struggling in prior topics (but only if ≥ 2 topics done)
+    if (priorScores.length >= 2) {
+      if (priorStruggleRate >= 0.6) {
+        riskScore += 0.25;
+        reasons.push(`struggled in ${Math.round(priorStruggleRate * 100)}% of topics`);
+      } else if (priorStruggleRate >= 0.4) {
+        riskScore += 0.12;
+      }
+    }
+
+    // Late-position topics are harder — tiny bonus only if already at risk
+    if (position >= 7 && riskScore >= 0.30) {
       riskScore += 0.05;
     }
 
-    // Cap at 0.95
-    riskScore = Math.min(0.95, riskScore);
+    // Cap at 0.92 — never show 100% certainty
+    riskScore = Math.min(0.92, riskScore);
 
-     const lastScore = priorScores[priorScores.length - 1];
+    // Only flag as at-risk if score crosses threshold AND
+    // we have at least one meaningful signal (prereqs or pattern)
+    const hasSignal = prereqScores.length > 0 || priorScores.length >= 3;
+    if (riskScore >= 0.38 && hasSignal) {
+      predictions.push({
+        title:        topic.title,
+        will_struggle: true,
+        confidence:   Math.round(riskScore * 1000) / 1000,
+        source:       "rule-based",
+        reasons,
+      });
+    }
+  });
 
-  const ruleTriggered =
-    lastScore !== undefined && lastScore <= 30;
-
-  if (riskScore >= 0.40 || ruleTriggered) {
-    predictions.push({
-      title: topic.title,
-      will_struggle: true,
-      confidence: Math.max(riskScore, 0.6),
-      source: "rule-based",
-      reasons,
-    });
-  }
-}); // ✅ closes forEach
-
-return predictions;
+  return predictions;
 }
 
 
@@ -211,33 +218,23 @@ function SocraticTutorPanel({ topic, subjectName, score, onClose }) {
 
 
 /* ══════════════════════════════════════════════════════
-   ML PREDICTION BANNER
-   source: "rule-based" → shows rule badge + ML upgrading indicator
-   source: "ml"         → shows ML badge (upgraded)
+   PREDICTION BANNER
 ══════════════════════════════════════════════════════ */
 function MLPredictionBanner({ predictions, mlUpgrading }) {
   const [expanded, setExpanded] = useState(false);
   const atRisk = predictions.filter(p => p.will_struggle);
-
   if (atRisk.length === 0) return null;
 
   const isRuleBased = atRisk.some(p => p.source === "rule-based");
 
   return (
     <div style={{ background: "var(--bg-secondary)", border: "1.5px solid #fde68a", borderRadius: "12px", padding: "16px 20px", marginBottom: "24px" }}>
-
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          {/* Source badge */}
           {isRuleBased ? (
-            <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" }}>
-              📐 Rule-based
-            </span>
+            <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" }}>📐 Rule-based</span>
           ) : (
-            <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "20px", background: "#ede9fe", color: "#5b21b6" }}>
-              🤖 ML Model
-            </span>
+            <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 10px", borderRadius: "20px", background: "#ede9fe", color: "#5b21b6" }}>🤖 ML Model</span>
           )}
           <p style={{ margin: 0, fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>
             {atRisk.length} upcoming topic{atRisk.length > 1 ? "s" : ""} flagged as high-risk
@@ -249,14 +246,12 @@ function MLPredictionBanner({ predictions, mlUpgrading }) {
         </button>
       </div>
 
-      {/* Description */}
       <p style={{ margin: "0 0 4px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.6 }}>
         {isRuleBased
           ? "Based on your prerequisite scores and past performance pattern."
           : "Predicted by a Random Forest classifier trained on student performance data."}
       </p>
 
-      {/* ML upgrading indicator */}
       {isRuleBased && mlUpgrading && (
         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
           <div style={{ width: "10px", height: "10px", border: "2px solid var(--border-color)", borderTopColor: "#8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
@@ -267,7 +262,6 @@ function MLPredictionBanner({ predictions, mlUpgrading }) {
         </div>
       )}
 
-      {/* Topic list */}
       {expanded && (
         <div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {atRisk.map((p, i) => (
@@ -275,7 +269,6 @@ function MLPredictionBanner({ predictions, mlUpgrading }) {
               <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#f59e0b", flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
                 <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>{p.title}</span>
-                {/* Show reasons for rule-based */}
                 {p.reasons?.length > 0 && (
                   <p style={{ margin: "2px 0 0", fontSize: "11px", color: "var(--text-muted)" }}>
                     Reason: {p.reasons[0]}
@@ -320,56 +313,49 @@ function SubjectPage() {
 
         if (topicList.length === 0 || !subject) return;
 
-        // 1. Map scores from DB (slugified) to their respective values
+        // Map slug → score
         const scoreBySlug = {};
-        topicList.forEach(t => { 
-          scoreBySlug[slugify(t.topic)] = t.score; 
-        });
+        topicList.forEach(t => { scoreBySlug[slugify(t.topic)] = t.score; });
 
-        // 2. Build title-keyed score map for the Rule Engine
-        // IMPORTANT: The Rule Engine uses .title to check prerequisites
+        // Map title → score (needed by rule engine which uses prerequisite titles)
         const scoreByTitle = {};
         subject.topics.forEach(t => {
-          const score = scoreBySlug[t.key];
-          if (score !== undefined && score > 0) {
-            scoreByTitle[t.title] = score;
-          }
+          const sc = scoreBySlug[t.key];
+          if (sc !== undefined && sc > 0) scoreByTitle[t.title] = sc;
         });
 
-        // 3. STEP 1: Run Rule-based predictions INSTANTLY
+        // ── Tier 1: Rule-based — runs instantly ──
         const rulePreds = computeRuleBasedPredictions(subject.topics, scoreByTitle);
         setPredictions(rulePreds);
 
-        // 4. STEP 2: ML predictions — runs in background
+        // ── Tier 2: ML — fires in background ──
         setMlUpgrading(true);
         if (mlAbortRef.current) mlAbortRef.current.abort();
         mlAbortRef.current = new AbortController();
 
-        // Send simple slugified topic scores to the Flask ML Service
-        const mlPayload = {};
-        topicList.forEach(t => { mlPayload[slugify(t.topic)] = t.score; });
+        const topicScores = {};
+        topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
 
         axios.post(
           `${BASE_URL}/api/ml/predict-struggle`,
-          { subject: subjectName, topicScores: mlPayload },
+          { subject: subjectName, topicScores },
           { headers: authHeader(), signal: mlAbortRef.current.signal, timeout: 45000 }
         )
           .then(mlRes => {
             const mlPreds = mlRes.data.predictions || [];
             if (mlPreds.length > 0) {
-              // ML responded — smoothly replace rule-based predictions
-              const tagged = mlPreds.map(p => ({ ...p, source: "ml" }));
-              setPredictions(tagged);
+              setPredictions(mlPreds.map(p => ({ ...p, source: "ml" })));
             }
+            // If ML returns empty, rule-based stays — don't wipe it
           })
           .catch(err => {
             if (axios.isCancel(err)) return;
-            console.log("ML background fetch failed/timeout, keeping rule-based results.");
+            console.log("ML unavailable — keeping rule-based:", err.message);
           })
           .finally(() => setMlUpgrading(false));
       })
       .catch(err => console.log("Analytics error:", err));
-  }, [subjectName, subject])
+  }, [subjectName, subject]);
 
   useEffect(() => {
     fetchProgress();
@@ -402,7 +388,6 @@ function SubjectPage() {
   return (
     <div style={{ padding: "40px", maxWidth: "860px", margin: "0 auto" }}>
 
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px" }}>
         <div>
           <h1 style={{ margin: "0 0 4px", fontSize: "28px", fontWeight: 700, color: "var(--text-primary)" }}>{subject.title}</h1>
@@ -414,14 +399,8 @@ function SubjectPage() {
         </button>
       </div>
 
-      {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
-        {[
-          { label: "Avg score",  value: `${avgScore}%` },
-          { label: "Attempted",  value: `${attempted}/${subject.topics.length}` },
-          { label: "Strong",     value: strong },
-          { label: "Weak",       value: weak   },
-        ].map((s, i) => (
+        {[{ label: "Avg score", value: `${avgScore}%` }, { label: "Attempted", value: `${attempted}/${subject.topics.length}` }, { label: "Strong", value: strong }, { label: "Weak", value: weak }].map((s, i) => (
           <div key={i} style={{ background: "var(--bg-card)", borderRadius: "10px", padding: "14px 16px", boxShadow: "var(--shadow-sm)", textAlign: "center", border: "1px solid var(--border-color)" }}>
             <p style={{ margin: "0 0 4px", fontSize: "22px", fontWeight: 700, color: "var(--text-primary)" }}>{s.value}</p>
             <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{s.label}</p>
@@ -429,12 +408,8 @@ function SubjectPage() {
         ))}
       </div>
 
-      {/* Prediction banner — shows rule-based instantly, upgrades to ML silently */}
-      {attempted > 0 && (
-        <MLPredictionBanner predictions={predictions} mlUpgrading={mlUpgrading} />
-      )}
+      {attempted > 0 && <MLPredictionBanner predictions={predictions} mlUpgrading={mlUpgrading} />}
 
-      {/* Recommendation */}
       {nextTopic && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", padding: "16px 20px", marginBottom: "28px" }}>
           <div>
@@ -462,29 +437,18 @@ function SubjectPage() {
 
         return (
           <div key={index} style={{ background: "var(--bg-card)", borderRadius: "10px", padding: "14px 16px", marginBottom: "10px", boxShadow: "var(--shadow-sm)", border: isAtRisk ? "1.5px solid #fde68a" : "1px solid var(--border-color)" }}>
-
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "15px", fontWeight: 500, color: "var(--text-primary)" }}>{topic.title}</span>
-
                 {isAtRisk && (
-                  <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e",
-                    border: "1px solid #fde68a" }}
+                  <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}
                     title={isML ? "Predicted by ML model" : "Predicted by rule-based engine"}>
                     {isML ? "🤖 At Risk" : "📐 At Risk"}
                   </span>
                 )}
-
-                {score > 0 && (
-                  <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "20px", border: `1px solid ${scoreColor}`, color: scoreColor, fontWeight: 500 }}>
-                    {score}% · {label}
-                  </span>
-                )}
-                {score === 0 && !isAtRisk && (
-                  <span style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>Not started</span>
-                )}
+                {score > 0 && <span style={{ fontSize: "12px", padding: "2px 8px", borderRadius: "20px", border: `1px solid ${scoreColor}`, color: scoreColor, fontWeight: 500 }}>{score}% · {label}</span>}
+                {score === 0 && !isAtRisk && <span style={{ fontSize: "12px", color: "var(--text-muted)", fontStyle: "italic" }}>Not started</span>}
               </div>
-
               <div style={{ display: "flex", gap: "8px", alignItems: "center", flexShrink: 0 }}>
                 {isWeak && (
                   <button onClick={() => setActiveTutorKey(tutorOpen ? null : topic.key)}
@@ -507,25 +471,18 @@ function SubjectPage() {
 
             {isAtRisk && pred && (
               <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "11px", color: "#92400e" }}>
-                  {isML ? "ML risk:" : "Rule risk:"}
-                </span>
+                <span style={{ fontSize: "11px", color: "#92400e" }}>{isML ? "ML risk:" : "Rule risk:"}</span>
                 <div style={{ flex: 1, height: "4px", background: "#fde68a", borderRadius: "4px", overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${Math.round(pred.confidence * 100)}%`, background: "#f59e0b" }} />
                 </div>
-                <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600 }}>
-                  {Math.round(pred.confidence * 100)}%
-                </span>
+                <span style={{ fontSize: "11px", color: "#92400e", fontWeight: 600 }}>{Math.round(pred.confidence * 100)}%</span>
               </div>
             )}
 
-            {tutorOpen && (
-              <SocraticTutorPanel topic={topic} subjectName={subjectName} score={score} onClose={() => setActiveTutorKey(null)} />
-            )}
+            {tutorOpen && <SocraticTutorPanel topic={topic} subjectName={subjectName} score={score} onClose={() => setActiveTutorKey(null)} />}
           </div>
         );
       })}
-
     </div>
   );
 }

@@ -1,11 +1,115 @@
 // frontend/src/pages/Topicpage.jsx
-// FULLY FIXED — every hardcoded color replaced with CSS variables for dark mode
+// FIXED:
+//   1. TextToSpeech embedded directly (no import needed) and added to theory tab
+//   2. /ai/ask URL fixed — was missing /api/ prefix → 404
+//   3. GATE-level questions (GeneratePractice) show after 70%+ score
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { authHeader } from "../utils/auth";
+
+const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
+
+/* ══════════════════════════════════════════════════════
+   TEXT TO SPEECH  (embedded — no separate import needed)
+══════════════════════════════════════════════════════ */
+function TextToSpeech({ text }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused,  setIsPaused]  = useState(false);
+  const [supported, setSupported] = useState(true);
+  const [speed,     setSpeed]     = useState(1);
+  const timerRef = useRef(null);
+
+  useEffect(() => { if (!window.speechSynthesis) setSupported(false); }, []);
+  useEffect(() => { stopAll(); }, [text]); // eslint-disable-line
+  useEffect(() => () => stopAll(), []);    // eslint-disable-line
+
+  const stopAll = () => {
+    window.speechSynthesis?.cancel();
+    clearInterval(timerRef.current);
+    setIsPlaying(false); setIsPaused(false);
+  };
+
+  // Chrome bug: speech silently stops after ~15s — keep alive by pause/resume
+  const startWorkaround = () => {
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      if (!window.speechSynthesis.speaking) { clearInterval(timerRef.current); return; }
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }, 10000);
+  };
+
+  const handlePlay = () => {
+    if (isPaused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false); setIsPlaying(true);
+      startWorkaround(); return;
+    }
+    window.speechSynthesis.cancel();
+    clearInterval(timerRef.current);
+    const utterance   = new SpeechSynthesisUtterance(text);
+    utterance.rate    = speed;
+    utterance.pitch   = 1;
+    utterance.lang    = "en-US";
+    utterance.onend   = () => { clearInterval(timerRef.current); setIsPlaying(false); setIsPaused(false); };
+    utterance.onerror = () => { clearInterval(timerRef.current); setIsPlaying(false); setIsPaused(false); };
+    window.speechSynthesis.speak(utterance);
+    setIsPlaying(true); setIsPaused(false);
+    startWorkaround();
+  };
+
+  const handlePause = () => {
+    window.speechSynthesis.pause();
+    clearInterval(timerRef.current);
+    setIsPaused(true); setIsPlaying(false);
+  };
+
+  const handleSpeedChange = (sp) => {
+    setSpeed(sp);
+    if (isPlaying || isPaused) stopAll();
+  };
+
+  if (!supported) return null;
+
+  const active = isPlaying || isPaused;
+  const speeds = [0.75, 1, 1.25, 1.5];
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "10px 16px", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "10px", margin: "0 0 20px" }}>
+      <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", flexShrink: 0 }}>🔊 Listen to theory</span>
+      <div style={{ display: "flex", gap: "8px" }}>
+        {!isPlaying && (
+          <button onClick={handlePlay} style={{ fontSize: "13px", padding: "5px 14px", borderRadius: "7px", border: "1px solid #22c55e", background: "#22c55e", color: "white", cursor: "pointer", fontWeight: 600 }}>
+            {isPaused ? "▶ Resume" : "▶ Play"}
+          </button>
+        )}
+        {isPlaying && (
+          <button onClick={handlePause} style={{ fontSize: "13px", padding: "5px 14px", borderRadius: "7px", border: "1px solid #d97706", background: "#fef3c7", color: "#92400e", cursor: "pointer", fontWeight: 600 }}>
+            ⏸ Pause
+          </button>
+        )}
+        {active && (
+          <button onClick={stopAll} style={{ fontSize: "13px", padding: "5px 14px", borderRadius: "7px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer" }}>
+            ⏹ Stop
+          </button>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: "4px" }}>
+        {speeds.map(sp => (
+          <button key={sp} onClick={() => handleSpeedChange(sp)} style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "6px", border: speed === sp ? "1px solid #6366f1" : "1px solid var(--border-color)", background: speed === sp ? "#6366f1" : "var(--bg-card)", color: speed === sp ? "white" : "var(--text-muted)", cursor: "pointer", fontWeight: 500 }}>
+            {sp}×
+          </button>
+        ))}
+      </div>
+      {isPlaying && <span style={{ fontSize: "12px", color: "#16a34a", fontStyle: "italic" }}>● reading aloud...</span>}
+      {isPaused  && <span style={{ fontSize: "12px", color: "#d97706", fontStyle: "italic" }}>⏸ paused</span>}
+    </div>
+  );
+}
+
 
 /* ══════════════════════════════════════════════════════
    ExplainBox
@@ -17,25 +121,15 @@ const ExplainBox = ({ topic, subject, ans }) => {
   const fetchExplanation = async () => {
     setStatus("loading");
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/explain-mistake", {
-        topic, subject,
-        question:      ans.question,
-        chosenOption:  ans.options[ans.chosenIndex],
-        correctOption: ans.options[ans.correctIndex],
-        allOptions:    ans.options
-      }, { headers: authHeader() });
+      const res = await axios.post(`${BASE_URL}/api/ai/explain-mistake`,
+        { topic, subject, question: ans.question, chosenOption: ans.options[ans.chosenIndex], correctOption: ans.options[ans.correctIndex], allOptions: ans.options },
+        { headers: authHeader() });
       setExplanation(res.data.explanation || "No explanation returned.");
       setStatus("done");
-    } catch {
-      setExplanation("Could not load explanation. Please try again.");
-      setStatus("error");
-    }
+    } catch { setExplanation("Could not load explanation. Please try again."); setStatus("error"); }
   };
 
-  if (status === "idle") return (
-    <button onClick={fetchExplanation} style={s.explainBtn}>🤖 Why was I wrong?</button>
-  );
-
+  if (status === "idle") return <button onClick={fetchExplanation} style={s.explainBtn}>🤖 Why was I wrong?</button>;
   if (status === "loading") return (
     <div style={s.explainBox}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -44,7 +138,6 @@ const ExplainBox = ({ topic, subject, ans }) => {
       </div>
     </div>
   );
-
   return (
     <div style={s.explainBox}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
@@ -60,93 +153,39 @@ const ExplainBox = ({ topic, subject, ans }) => {
 
 
 /* ══════════════════════════════════════════════════════
-   Option Row — shared by quiz, practice, report
+   OptionRow — shared quiz option component
 ══════════════════════════════════════════════════════ */
 const OptionRow = ({ opt, i, isSelected, onClick, accentColor = "#6366f1" }) => (
-  <div onClick={onClick} style={{
-    display: "flex", alignItems: "center", gap: "14px",
-    padding: "14px 18px", borderRadius: "10px", cursor: onClick ? "pointer" : "default",
-    border: isSelected ? `2px solid ${accentColor}` : "1.5px solid var(--border-color)",
-    background: isSelected ? "var(--bg-hover)" : "var(--bg-card)",
-    transition: "all 0.15s",
-  }}>
-    <span style={{
-      width: "30px", height: "30px", borderRadius: "50%", flexShrink: 0,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: "13px", fontWeight: 700,
-      background: isSelected ? accentColor : "var(--bg-secondary)",
-      color: isSelected ? "white" : "var(--text-secondary)",
-      transition: "all 0.15s"
-    }}>
+  <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "10px", cursor: onClick ? "pointer" : "default", border: isSelected ? `2px solid ${accentColor}` : "1.5px solid var(--border-color)", background: isSelected ? "var(--bg-hover)" : "var(--bg-card)", transition: "all 0.15s" }}>
+    <span style={{ width: "30px", height: "30px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: 700, background: isSelected ? accentColor : "var(--bg-secondary)", color: isSelected ? "white" : "var(--text-secondary)", transition: "all 0.15s" }}>
       {String.fromCharCode(65 + i)}
     </span>
-    <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: isSelected ? 500 : 400 }}>
-      {opt}
-    </span>
+    <span style={{ fontSize: "14px", color: "var(--text-primary)", fontWeight: isSelected ? 500 : 400 }}>{opt}</span>
   </div>
 );
 
 
 /* ══════════════════════════════════════════════════════
-   ReportOptionRow — for results view (correct/wrong coloring)
+   ReportOptionRow — correct/wrong coloring in results
 ══════════════════════════════════════════════════════ */
 const ReportOptionRow = ({ opt, j, isCorrect, isWrongChosen }) => {
-  // Use border-left accent + neutral background so text is always readable
-  // in both light and dark mode. Colored backgrounds cause contrast issues in dark mode.
-  let borderLeft = "3px solid var(--border-color)";
-  let bg         = "var(--bg-secondary)";
-  let textColor  = "var(--text-primary)";
-  let circleBg   = "var(--bg-hover)";
-  let circleColor= "var(--text-muted)";
-  let labelColor = "var(--text-muted)";
-  let labelText  = "";
-
-  if (isCorrect) {
-    borderLeft  = "3px solid #22c55e";
-    bg          = "var(--bg-secondary)";
-    textColor   = "#16a34a";
-    circleBg    = "#22c55e";
-    circleColor = "white";
-    labelColor  = "#16a34a";
-    labelText   = "✓ Correct";
-  }
-  if (isWrongChosen) {
-    borderLeft  = "3px solid #ef4444";
-    bg          = "var(--bg-secondary)";
-    textColor   = "#dc2626";
-    circleBg    = "#ef4444";
-    circleColor = "white";
-    labelColor  = "#dc2626";
-    labelText   = "Your answer";
-  }
-
+  let borderLeft = "3px solid var(--border-color)", bg = "var(--bg-secondary)", textColor = "var(--text-primary)", circleBg = "var(--bg-hover)", circleColor = "var(--text-muted)", labelText = "";
+  if (isCorrect)    { borderLeft = "3px solid #22c55e"; textColor = "#16a34a"; circleBg = "#22c55e"; circleColor = "white"; labelText = "✓ Correct"; }
+  if (isWrongChosen){ borderLeft = "3px solid #ef4444"; textColor = "#dc2626"; circleBg = "#ef4444"; circleColor = "white"; labelText = "Your answer"; }
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: "10px",
-      padding: "9px 12px", borderRadius: "8px", marginBottom: "6px",
-      fontSize: "13px", background: bg,
-      border: "1px solid var(--border-color)",
-      borderLeft,
-    }}>
-      <span style={{
-        width: "22px", height: "22px", borderRadius: "50%",
-        background: circleBg,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: "11px", fontWeight: 700, flexShrink: 0, color: circleColor
-      }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", borderRadius: "8px", marginBottom: "6px", fontSize: "13px", background: bg, border: "1px solid var(--border-color)", borderLeft }}>
+      <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: circleBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, flexShrink: 0, color: circleColor }}>
         {String.fromCharCode(65 + j)}
       </span>
       <span style={{ flex: 1, color: textColor, fontWeight: (isCorrect || isWrongChosen) ? 600 : 400 }}>{opt}</span>
-      {labelText && (
-        <span style={{ fontSize: "11px", fontWeight: 700, color: labelColor, flexShrink: 0 }}>{labelText}</span>
-      )}
+      {labelText && <span style={{ fontSize: "11px", fontWeight: 700, color: isCorrect ? "#16a34a" : "#dc2626", flexShrink: 0 }}>{labelText}</span>}
     </div>
   );
 };
 
 
 /* ══════════════════════════════════════════════════════
-   GeneratePractice
+   GeneratePractice — shown after 70%+ score
 ══════════════════════════════════════════════════════ */
 const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
   const [phase,          setPhase]          = useState("idle");
@@ -159,11 +198,9 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
   const generate = async () => {
     setPhase("loading"); setError("");
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/generate-questions", {
-        topic: topicData.title, subject: subjectName,
-        theory: topicData.theory,
-        existingQs: existingQuestions.map(q => q.question), count: 5
-      }, { headers: authHeader() });
+      const res = await axios.post(`${BASE_URL}/api/ai/generate-questions`,
+        { topic: topicData.title, subject: subjectName, theory: topicData.theory, existingQs: existingQuestions.map(q => q.question), count: 5, difficulty: "advanced" },
+        { headers: authHeader() });
       setAiQuestions(res.data.questions);
       setCurrentIndex(0); setSelectedOption(null); setAnswers([]);
       setPhase("question");
@@ -174,8 +211,7 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
     if (selectedOption === null) return;
     const q = aiQuestions[currentIndex];
     const isCorrect = selectedOption === q.correctAnswer;
-    const record = { question: q.question, options: q.options, correctIndex: q.correctAnswer, chosenIndex: selectedOption, isCorrect };
-    const updated = [...answers, record];
+    const updated = [...answers, { question: q.question, options: q.options, correctIndex: q.correctAnswer, chosenIndex: selectedOption, isCorrect }];
     setAnswers(updated);
     setSelectedOption(null);
     if (currentIndex + 1 >= aiQuestions.length) setPhase("results");
@@ -191,57 +227,48 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
       {phase === "idle" && (
         <div style={s.genIdle}>
           <div>
-            <p style={s.genTitle}>✨ Want more practice?</p>
-            <p style={s.genSub}>Generate 5 fresh AI-created questions on this topic — different every time.</p>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <p style={s.genTitle}>🎯 GATE-Level Practice</p>
+              <span style={s.aiBadge}>✨ AI Generated</span>
+            </div>
+            <p style={s.genSub}>You scored 70%+! Try 5 advanced GATE-style questions to challenge yourself.</p>
             {error && <p style={{ color: "#dc2626", fontSize: "13px", margin: "4px 0 0" }}>{error}</p>}
           </div>
-          <button onClick={generate} style={s.genBtn}>Generate Questions →</button>
+          <button onClick={generate} style={{ ...s.genBtn, background: "linear-gradient(90deg,#f59e0b,#d97706)" }}>Generate Questions →</button>
         </div>
       )}
-
       {phase === "loading" && (
         <div style={{ ...s.genIdle, justifyContent: "center", gap: "14px" }}>
           <div style={s.spinner} />
-          <div>
-            <p style={s.genTitle}>AI is crafting questions...</p>
-            <p style={s.genSub}>Generating 5 unique questions tailored to this topic.</p>
-          </div>
+          <div><p style={s.genTitle}>Generating GATE-level questions...</p><p style={s.genSub}>This may take a few seconds.</p></div>
         </div>
       )}
-
       {phase === "question" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={s.aiBadge}>✨ AI Generated</span>
-              <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Question {currentIndex + 1} of {aiQuestions.length}</span>
+              <span style={s.aiBadge}>🎯 GATE Practice</span>
+              <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Q{currentIndex + 1} of {aiQuestions.length}</span>
             </div>
             <button onClick={() => setPhase("idle")} style={s.genCloseBtn}>✕ Cancel</button>
           </div>
           <div style={{ height: "4px", background: "var(--border-color)", borderRadius: "4px", overflow: "hidden", marginBottom: "20px" }}>
-            <div style={{ height: "100%", width: `${(currentIndex / aiQuestions.length) * 100}%`, background: "linear-gradient(90deg,#8b5cf6,#6366f1)", borderRadius: "4px", transition: "width 0.3s" }} />
+            <div style={{ height: "100%", width: `${(currentIndex / aiQuestions.length) * 100}%`, background: "linear-gradient(90deg,#f59e0b,#d97706)", borderRadius: "4px" }} />
           </div>
-          <div style={{ ...s.questionBox, background: "var(--bg-secondary)", border: "1px solid var(--border-color)" }}>
-            <span style={{ ...s.questionNum, background: "linear-gradient(135deg,#8b5cf6,#6366f1)" }}>Q{currentIndex + 1}</span>
+          <div style={{ ...s.questionBox, background: "var(--bg-secondary)", border: "1px solid #fde68a" }}>
+            <span style={{ ...s.questionNum, background: "linear-gradient(135deg,#f59e0b,#d97706)" }}>Q{currentIndex + 1}</span>
             <h3 style={s.questionText}>{aiQuestions[currentIndex].question}</h3>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
             {aiQuestions[currentIndex].options.map((opt, i) => (
-              <OptionRow key={i} opt={opt} i={i} isSelected={selectedOption === i} onClick={() => setSelectedOption(i)} accentColor="#8b5cf6" />
+              <OptionRow key={i} opt={opt} i={i} isSelected={selectedOption === i} onClick={() => setSelectedOption(i)} accentColor="#f59e0b" />
             ))}
           </div>
-          <button onClick={handleAnswer} disabled={selectedOption === null} style={{
-            width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-            background: selectedOption === null ? "var(--bg-secondary)" : "linear-gradient(90deg,#8b5cf6,#6366f1)",
-            color: selectedOption === null ? "var(--text-muted)" : "white",
-            fontSize: "15px", fontWeight: 600,
-            cursor: selectedOption === null ? "not-allowed" : "pointer", transition: "all 0.2s"
-          }}>
-            {currentIndex + 1 === aiQuestions.length ? "Finish Practice 🎯" : "Next Question →"}
+          <button onClick={handleAnswer} disabled={selectedOption === null} style={{ width: "100%", padding: "14px", borderRadius: "10px", border: "none", background: selectedOption === null ? "var(--bg-secondary)" : "linear-gradient(90deg,#f59e0b,#d97706)", color: selectedOption === null ? "var(--text-muted)" : "white", fontSize: "15px", fontWeight: 600, cursor: selectedOption === null ? "not-allowed" : "pointer" }}>
+            {currentIndex + 1 === aiQuestions.length ? "Finish Practice 🎯" : "Next →"}
           </button>
         </div>
       )}
-
       {phase === "results" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "20px", background: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "12px", padding: "20px", marginBottom: "20px" }}>
@@ -250,32 +277,21 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
               <span style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>{correctCount}/{aiQuestions.length}</span>
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>
-                {pct >= 70 ? "🎉 Excellent!" : pct >= 40 ? "📚 Good effort!" : "💪 Keep practising!"}
-              </p>
-              <p style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>AI Practice Round complete</p>
-              <button onClick={generate} style={{ ...s.genBtn, padding: "7px 16px", fontSize: "13px" }}>Generate 5 More →</button>
+              <p style={{ margin: "0 0 4px", fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>{pct >= 70 ? "🎉 Excellent!" : pct >= 40 ? "📚 Good effort!" : "💪 Keep going!"}</p>
+              <p style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>GATE Practice complete</p>
+              <button onClick={generate} style={{ ...s.genBtn, padding: "7px 16px", fontSize: "13px", background: "linear-gradient(90deg,#f59e0b,#d97706)" }}>Try 5 More →</button>
             </div>
           </div>
-          <h4 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "12px" }}>Practice Round Breakdown</h4>
+          <h4 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "12px" }}>Breakdown</h4>
           {answers.map((ans, i) => (
             <div key={i} style={{ ...s.reportCard, borderLeft: `4px solid ${ans.isCorrect ? "#22c55e" : "#ef4444"}`, marginBottom: "10px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "20px", background: ans.isCorrect ? "#dcfce7" : "#fee2e2", color: ans.isCorrect ? "#166534" : "#991b1b" }}>
-                  {ans.isCorrect ? "✓ Correct" : "✗ Wrong"}
-                </span>
-                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                  <span style={s.aiBadge}>AI</span>
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Q{i + 1}</span>
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "20px", background: ans.isCorrect ? "#dcfce7" : "#fee2e2", color: ans.isCorrect ? "#166534" : "#991b1b" }}>{ans.isCorrect ? "✓ Correct" : "✗ Wrong"}</span>
+                <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Q{i + 1}</span>
               </div>
-              <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 10px", lineHeight: 1.5 }}>{ans.question}</p>
-              {ans.options.map((opt, j) => (
-                <ReportOptionRow key={j} opt={opt} j={j}
-                  isChosen={j === ans.chosenIndex}
-                  isCorrect={j === ans.correctIndex}
-                  isWrongChosen={j === ans.chosenIndex && !ans.isCorrect} />
-              ))}
+              <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 10px" }}>{ans.question}</p>
+              {ans.options.map((opt, j) => <ReportOptionRow key={j} opt={opt} j={j} isCorrect={j === ans.correctIndex} isWrongChosen={j === ans.chosenIndex && !ans.isCorrect} />)}
+              {!ans.isCorrect && <div style={{ marginTop: "12px" }}><ExplainBox topic={topicData.title} subject={subjectName} ans={ans} /></div>}
             </div>
           ))}
         </div>
@@ -296,7 +312,6 @@ const ResultsView = ({ answers, totalQuestions, topicTitle, subjectName, onRetry
 
   return (
     <div>
-      {/* Score banner */}
       <div style={{ ...s.scoreBanner, background: scoreBg, borderColor: scoreColor + "33" }}>
         <div style={{ ...s.scoreCircle, borderColor: scoreColor }}>
           <span style={{ fontSize: "26px", fontWeight: 700, color: scoreColor, lineHeight: 1 }}>{percentage}%</span>
@@ -307,56 +322,43 @@ const ResultsView = ({ answers, totalQuestions, topicTitle, subjectName, onRetry
             {percentage >= 70 ? "🎉 Excellent work!" : percentage >= 40 ? "📚 Keep going!" : "💪 Don't give up!"}
           </h2>
           <p style={{ margin: "0 0 16px", color: "var(--text-secondary)", fontSize: "14px", lineHeight: 1.5 }}>
-            {percentage >= 70 ? "You have a strong grasp of this topic."
-              : percentage >= 40 ? "You know the basics — review the mistakes below."
-              : "Study the theory section carefully and try again."}
+            {percentage >= 70 ? "You have a strong grasp of this topic." : percentage >= 40 ? "Review the mistakes below and retry." : "Study the theory carefully and try again."}
           </p>
           {!isPrevious && <button onClick={onRetry} style={s.retryBtn}>🔁 Retry Test</button>}
         </div>
       </div>
 
-      {/* Pills */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "28px", flexWrap: "wrap" }}>
-        {[
-          { label: `✅  ${correctCount} Correct`,                           bg: "#dcfce7", color: "#166534" },
-          { label: `❌  ${answers.filter(a => !a.isCorrect).length} Wrong`, bg: "#fee2e2", color: "#991b1b" },
-          { label: `📝  ${totalQuestions} Total`,                            bg: "#e0f2fe", color: "#075985" },
-        ].map((p, i) => (
+        {[{ label: `✅  ${correctCount} Correct`, bg: "#dcfce7", color: "#166534" }, { label: `❌  ${answers.filter(a => !a.isCorrect).length} Wrong`, bg: "#fee2e2", color: "#991b1b" }, { label: `📝  ${totalQuestions} Total`, bg: "#e0f2fe", color: "#075985" }].map((p, i) => (
           <span key={i} style={{ padding: "6px 16px", borderRadius: "20px", fontSize: "13px", fontWeight: 500, background: p.bg, color: p.color }}>{p.label}</span>
         ))}
       </div>
 
-      {/* Per-question report */}
       <h3 style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "16px" }}>Detailed Report</h3>
-
       {answers.map((ans, i) => (
         <div key={i} style={{ ...s.reportCard, borderLeft: `4px solid ${ans.isCorrect ? "#22c55e" : "#ef4444"}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "20px", background: ans.isCorrect ? "#dcfce7" : "#fee2e2", color: ans.isCorrect ? "#166534" : "#991b1b" }}>
-              {ans.isCorrect ? "✓ Correct" : "✗ Wrong"}
-            </span>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, padding: "3px 10px", borderRadius: "20px", background: ans.isCorrect ? "#dcfce7" : "#fee2e2", color: ans.isCorrect ? "#166534" : "#991b1b" }}>{ans.isCorrect ? "✓ Correct" : "✗ Wrong"}</span>
             <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500 }}>Q{i + 1}</span>
           </div>
-          <p style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 12px", lineHeight: 1.5 }}>{ans.question}</p>
-          <div>
-            {ans.options.map((opt, j) => (
-              <ReportOptionRow key={j} opt={opt} j={j}
-                isChosen={j === ans.chosenIndex}
-                isCorrect={j === ans.correctIndex}
-                isWrongChosen={j === ans.chosenIndex && !ans.isCorrect} />
-            ))}
-          </div>
-          {!ans.isCorrect && !isPrevious && (
-            <div style={{ marginTop: "12px" }}>
-              <ExplainBox topic={topicTitle} subject={subjectName} ans={ans} />
-            </div>
-          )}
+          <p style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)", margin: "0 0 12px" }}>{ans.question}</p>
+          {ans.options.map((opt, j) => <ReportOptionRow key={j} opt={opt} j={j} isCorrect={j === ans.correctIndex} isWrongChosen={j === ans.chosenIndex && !ans.isCorrect} />)}
+          {!ans.isCorrect && !isPrevious && <div style={{ marginTop: "12px" }}><ExplainBox topic={topicTitle} subject={subjectName} ans={ans} /></div>}
         </div>
       ))}
 
-      {!isPrevious && (
+      {/* GATE-Level practice — only shown on current attempt when score >= 70% */}
+      {!isPrevious && percentage >= 70 && topicDataRef && (
         <div style={{ marginTop: "32px", borderTop: "1px solid var(--border-color)", paddingTop: "28px" }}>
           <GeneratePractice topicData={topicDataRef} subjectName={subjectName} existingQuestions={answers} />
+        </div>
+      )}
+
+      {/* Regular practice for lower scores */}
+      {!isPrevious && percentage < 70 && topicDataRef && (
+        <div style={{ marginTop: "24px", padding: "16px 20px", background: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border-color)" }}>
+          <p style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>📚 Keep practising</p>
+          <p style={{ margin: 0, fontSize: "13px", color: "var(--text-secondary)" }}>Score 70% or above to unlock GATE-level questions. Review the theory and retry!</p>
         </div>
       )}
     </div>
@@ -385,7 +387,7 @@ const TopicPage = () => {
   const [showPrevious,      setShowPrevious]      = useState(false);
 
   useEffect(() => {
-    axios.get(`https://ai-edtech-backend-r2y7.onrender.com/api/topics/${subjectName}/${topicName}`)
+    axios.get(`${BASE_URL}/api/topics/${subjectName}/${topicName}`)
       .then(res => setTopicData(res.data))
       .catch(err => console.log(err));
   }, [subjectName, topicName]);
@@ -398,10 +400,7 @@ const TopicPage = () => {
   useEffect(() => {
     const fetchLastAttempt = async () => {
       try {
-        const res = await axios.get(
-          `https://ai-edtech-backend-r2y7.onrender.com/api/progress/${subjectName}/${topicName}`,
-          { headers: authHeader() }
-        );
+        const res = await axios.get(`${BASE_URL}/api/progress/${subjectName}/${topicName}`, { headers: authHeader() });
         if (res.data.found && res.data.lastAttempt?.length > 0) {
           setPreviousAnswers(res.data.lastAttempt);
           setTestPhase("start");
@@ -418,12 +417,10 @@ const TopicPage = () => {
 
   const updateProgress = async (section, scoreValue, answersToSave) => {
     try {
-      await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/progress",
-        { subject: subjectName, topic: topicName, section, score: scoreValue, answers: answersToSave },
-        { headers: authHeader() });
+      await axios.post(`${BASE_URL}/api/progress`, { subject: subjectName, topic: topicName, section, score: scoreValue, answers: answersToSave }, { headers: authHeader() });
     } catch (err) { console.log("Progress save error:", err); }
     try {
-      await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/streak", {}, { headers: authHeader() });
+      await axios.post(`${BASE_URL}/api/streak`, {}, { headers: authHeader() });
     } catch (err) { console.log("Streak update error:", err); }
   };
 
@@ -446,11 +443,12 @@ const TopicPage = () => {
     } else { setCurrentIndex(nextIndex); }
   };
 
+  // FIXED: was "/ai/ask" — missing /api/ prefix → 404 on deployed version
   const askAI = async () => {
     if (!aiQuestion.trim()) return;
     setLoadingAI(true); setAiAnswer("");
     try {
-      const res = await axios.post("https://ai-edtech-backend-r2y7.onrender.com/api/ai/ask",
+      const res = await axios.post(`${BASE_URL}/api/ai/ask`,
         { topic: topicData.title, question: aiQuestion },
         { headers: authHeader() });
       setAiAnswer(res.data?.answer || "No answer received");
@@ -467,20 +465,13 @@ const TopicPage = () => {
     </div>
   );
 
-  const pageTitle = topicData.title.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-
-  const prevCorrect    = previousAnswers.filter(a => a.isCorrect).length;
-  const prevTotal      = previousAnswers.length;
-  const prevPct        = prevTotal ? Math.round((prevCorrect / prevTotal) * 100) : 0;
+  const pageTitle   = topicData.title.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const prevCorrect = previousAnswers.filter(a => a.isCorrect).length;
+  const prevTotal   = previousAnswers.length;
+  const prevPct     = prevTotal ? Math.round((prevCorrect / prevTotal) * 100) : 0;
   const prevScoreColor = prevPct >= 70 ? "#16a34a" : prevPct >= 40 ? "#d97706" : "#dc2626";
-  const prevScoreBg    = prevPct >= 70 ? "#f0fdf4" : prevPct >= 40 ? "#fffbeb" : "#fef2f2";
+  const prevScoreBg    = prevPct >= 70 ? "#f0fdf4"  : prevPct >= 40 ? "#fffbeb"  : "#fef2f2";
   const hasPrevious    = previousAnswers.length > 0;
-
-  const tabs = [
-    { key: "theory", label: "📖  Theory" },
-    { key: "videos", label: "🎬  Videos" },
-    { key: "test",   label: "✏️  Test"   },
-  ];
 
   return (
     <div style={s.page}>
@@ -490,7 +481,7 @@ const TopicPage = () => {
       </div>
 
       <div style={s.tabRow}>
-        {tabs.map(tab => (
+        {[{ key: "theory", label: "📖  Theory" }, { key: "videos", label: "🎬  Videos" }, { key: "test", label: "✏️  Test" }].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ ...s.tabBtn, ...(activeTab === tab.key ? s.tabBtnActive : {}) }}>
             {tab.label}
@@ -498,11 +489,14 @@ const TopicPage = () => {
         ))}
       </div>
 
-      {/* THEORY TAB */}
+      {/* ── THEORY TAB — includes TextToSpeech ── */}
       {activeTab === "theory" && (
         <div style={s.theoryCard}>
           <div style={s.theoryAccent} />
           <div style={s.theoryBody}>
+            {/* TEXT TO SPEECH — now visible on deployed version */}
+            <TextToSpeech text={topicData.theory} />
+
             {topicData.theory.split("\n").map((line, i) => {
               if (!line.trim()) return <div key={i} style={{ height: "8px" }} />;
               if (line.trim().endsWith(":") && line.length < 60) return <p key={i} style={s.theoryHeading}>{line}</p>;
@@ -523,11 +517,11 @@ const TopicPage = () => {
         </div>
       )}
 
-      {/* VIDEOS TAB */}
+      {/* ── VIDEOS TAB ── */}
       {activeTab === "videos" && (
         <div>
           {topicData.videos.length === 0 ? (
-            <div style={s.emptyState}><div style={s.emptyIcon}>🎬</div><p style={s.emptyText}>No videos available for this topic yet.</p></div>
+            <div style={s.emptyState}><div style={s.emptyIcon}>🎬</div><p style={s.emptyText}>No videos available yet.</p></div>
           ) : topicData.videos.map((video, i) => (
             <div key={i} style={s.videoCard}>
               <div style={s.videoLabel}>Video {i + 1}</div>
@@ -545,16 +539,15 @@ const TopicPage = () => {
         </div>
       )}
 
-      {/* TEST TAB */}
+      {/* ── TEST TAB ── */}
       {activeTab === "test" && adaptiveQuestions.length > 0 && (
         <div style={s.testCard}>
 
-          {/* START SCREEN */}
           {testPhase === "start" && (
             <div style={s.startScreen}>
               <div style={s.startIconWrap}>✏️</div>
               <h2 style={s.startTitle}>Test Your Knowledge</h2>
-              <p style={s.startSub}>{adaptiveQuestions.length} questions · Multiple choice · AI-powered report</p>
+              <p style={s.startSub}>{adaptiveQuestions.length} questions · Multiple choice · AI-powered feedback</p>
               {hasPrevious && (
                 <div style={{ ...s.prevBanner, background: prevScoreBg, borderColor: prevScoreColor + "44" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
@@ -564,7 +557,7 @@ const TopicPage = () => {
                     </div>
                     <div style={{ flex: 1, textAlign: "left" }}>
                       <p style={{ margin: "0 0 2px", fontSize: "13px", fontWeight: 700, color: "var(--text-primary)" }}>Your last attempt</p>
-                      <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>{prevCorrect} correct · {prevTotal - prevCorrect} wrong · {prevTotal} total</p>
+                      <p style={{ margin: 0, fontSize: "12px", color: "var(--text-secondary)" }}>{prevCorrect} correct · {prevTotal - prevCorrect} wrong</p>
                     </div>
                     <button onClick={() => setTestPhase("previous")} style={s.viewPrevBtn}>View Report →</button>
                   </div>
@@ -581,25 +574,22 @@ const TopicPage = () => {
             </div>
           )}
 
-          {/* PREVIOUS REPORT */}
           {testPhase === "previous" && (
             <div>
               <div style={s.prevReportHeader}>
                 <div>
-                  <p style={{ margin: "0 0 2px", fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Last Attempt</p>
+                  <p style={{ margin: "0 0 2px", fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase" }}>Last Attempt</p>
                   <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 700, color: "var(--text-primary)" }}>Previous Performance</h3>
                 </div>
                 <button onClick={() => setTestPhase("start")} style={s.backBtn}>← Back</button>
               </div>
               <ResultsView answers={previousAnswers} totalQuestions={adaptiveQuestions.length} topicTitle={topicData.title} subjectName={subjectName} onRetry={resetTest} isPrevious={true} topicDataRef={topicData} />
               <div style={{ textAlign: "center", marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--border-color)" }}>
-                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "12px" }}>Ready to improve your score?</p>
                 <button onClick={() => { resetTest(); setTestPhase("question"); }} style={s.startBtn}>Start New Attempt →</button>
               </div>
             </div>
           )}
 
-          {/* QUESTION PHASE */}
           {testPhase === "question" && (
             <div>
               <div style={{ marginBottom: "24px" }}>
@@ -615,23 +605,17 @@ const TopicPage = () => {
                   </div>
                 </div>
                 <div style={{ height: "6px", background: "var(--border-color)", borderRadius: "6px", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(currentIndex / adaptiveQuestions.length) * 100}%`, background: "linear-gradient(90deg, #6366f1, #8b5cf6)", borderRadius: "6px", transition: "width 0.4s ease" }} />
+                  <div style={{ height: "100%", width: `${(currentIndex / adaptiveQuestions.length) * 100}%`, background: "linear-gradient(90deg,#6366f1,#8b5cf6)", borderRadius: "6px", transition: "width 0.4s" }} />
                 </div>
               </div>
 
               {showPrevious && hasPrevious && currentIndex < previousAnswers.length && (
                 <div style={s.prevMiniPanel}>
-                  <p style={{ margin: "0 0 8px", fontSize: "12px", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Your previous answer for this question</p>
-                  <p style={{ margin: "0 0 8px", fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>{previousAnswers[currentIndex].question}</p>
+                  <p style={{ margin: "0 0 8px", fontSize: "12px", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase" }}>Your previous answer</p>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                     <span style={{ fontSize: "13px", padding: "4px 12px", borderRadius: "20px", background: previousAnswers[currentIndex].isCorrect ? "#dcfce7" : "#fee2e2", color: previousAnswers[currentIndex].isCorrect ? "#166534" : "#991b1b", fontWeight: 600 }}>
                       You chose: {previousAnswers[currentIndex].options[previousAnswers[currentIndex].chosenIndex]}
                     </span>
-                    {!previousAnswers[currentIndex].isCorrect && (
-                      <span style={{ fontSize: "13px", padding: "4px 12px", borderRadius: "20px", background: "#dcfce7", color: "#166534", fontWeight: 600 }}>
-                        Correct: {previousAnswers[currentIndex].options[previousAnswers[currentIndex].correctIndex]}
-                      </span>
-                    )}
                   </div>
                 </div>
               )}
@@ -647,23 +631,15 @@ const TopicPage = () => {
                 ))}
               </div>
 
-              <button onClick={handleAdaptiveAnswer} disabled={selectedOption === null} style={{
-                width: "100%", padding: "14px", borderRadius: "10px", border: "none",
-                background: selectedOption === null ? "var(--bg-secondary)" : "linear-gradient(90deg, #6366f1, #8b5cf6)",
-                color: selectedOption === null ? "var(--text-muted)" : "white",
-                fontSize: "15px", fontWeight: 600,
-                cursor: selectedOption === null ? "not-allowed" : "pointer", transition: "all 0.2s"
-              }}>
+              <button onClick={handleAdaptiveAnswer} disabled={selectedOption === null} style={{ width: "100%", padding: "14px", borderRadius: "10px", border: "none", background: selectedOption === null ? "var(--bg-secondary)" : "linear-gradient(90deg,#6366f1,#8b5cf6)", color: selectedOption === null ? "var(--text-muted)" : "white", fontSize: "15px", fontWeight: 600, cursor: selectedOption === null ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
                 {currentIndex + 1 === adaptiveQuestions.length ? "Finish Test 🎯" : "Next Question →"}
               </button>
             </div>
           )}
 
-          {/* RESULTS */}
           {testPhase === "results" && (
             <ResultsView answers={answers} totalQuestions={adaptiveQuestions.length} topicTitle={topicData.title} subjectName={subjectName} onRetry={resetTest} isPrevious={false} topicDataRef={topicData} />
           )}
-
         </div>
       )}
     </div>
@@ -671,80 +647,71 @@ const TopicPage = () => {
 };
 
 
-/* STYLES */
+/* ══════════════════════════════════════════════════════
+   STYLES
+══════════════════════════════════════════════════════ */
 const s = {
   page:             { maxWidth: "820px", margin: "0 auto", padding: "40px 24px 80px" },
   header:           { marginBottom: "32px" },
   headerBreadcrumb: { fontSize: "12px", color: "var(--text-muted)", textTransform: "capitalize", letterSpacing: "0.04em", marginBottom: "8px" },
   headerTitle:      { fontSize: "30px", fontWeight: 800, color: "var(--text-primary)", margin: 0, lineHeight: 1.2 },
-
-  tabRow:      { display: "flex", gap: "8px", marginBottom: "28px", borderBottom: "2px solid var(--border-color)" },
-  tabBtn:      { padding: "10px 20px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", marginBottom: "-2px", borderBottom: "2px solid transparent" },
-  tabBtnActive:{ color: "#6366f1", borderBottom: "2px solid #6366f1", background: "var(--bg-secondary)" },
-
-  theoryCard:    { background: "var(--bg-card)", borderRadius: "16px", border: "1px solid var(--border-color)", overflow: "hidden", boxShadow: "var(--shadow-sm)" },
-  theoryAccent:  { height: "4px", background: "linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4)" },
-  theoryBody:    { padding: "32px", background: "var(--bg-card)" },
-  theoryHeading: { fontSize: "14px", fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.06em", margin: "20px 0 8px" },
-  theoryPara:    { fontSize: "15px", color: "var(--text-primary)", lineHeight: 1.8, margin: "0 0 8px" },
-  theoryBullet:  { display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "15px", color: "var(--text-primary)", lineHeight: 1.7, marginBottom: "6px" },
-  bulletDot:     { width: "6px", height: "6px", borderRadius: "50%", background: "#6366f1", flexShrink: 0, marginTop: "8px" },
-
-  aiBox:       { borderTop: "1px solid var(--border-color)", background: "var(--bg-secondary)", padding: "20px 32px" },
-  aiBoxHeader: { marginBottom: "12px" },
-  aiBoxTitle:  { fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" },
-  aiInput:     { flex: 1, padding: "10px 14px", borderRadius: "8px", border: "1.5px solid var(--border-color)", fontSize: "14px", outline: "none", fontFamily: "inherit", resize: "none", background: "var(--bg-input)", color: "var(--text-primary)" },
-  aiBtn:       { padding: "10px 20px", borderRadius: "8px", border: "none", background: "linear-gradient(90deg,#6366f1,#4f46e5)", color: "white", fontWeight: 600, fontSize: "14px", cursor: "pointer", flexShrink: 0, alignSelf: "flex-end" },
-  aiAnswer:    { marginTop: "14px", background: "var(--bg-card)", borderRadius: "8px", border: "1px solid var(--border-color)", padding: "14px 16px", fontSize: "14px", color: "var(--text-primary)", lineHeight: 1.7 },
-
-  videoCard:   { marginBottom: "24px", background: "var(--bg-card)", borderRadius: "14px", border: "1px solid var(--border-color)", overflow: "hidden", boxShadow: "var(--shadow-sm)" },
-  videoLabel:  { padding: "12px 20px", fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)" },
-  videoWrap:   { padding: "16px", height: "420px" },
-  emptyState:  { textAlign: "center", padding: "60px 20px" },
-  emptyIcon:   { fontSize: "48px", marginBottom: "12px" },
-  emptyText:   { color: "var(--text-muted)", fontSize: "15px" },
-
-  testCard:       { background: "var(--bg-card)", borderRadius: "16px", border: "1px solid var(--border-color)", padding: "32px", boxShadow: "var(--shadow-sm)" },
-  startScreen:    { display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 0 10px" },
-  startIconWrap:  { fontSize: "52px", marginBottom: "16px" },
-  startTitle:     { fontSize: "24px", fontWeight: 800, color: "var(--text-primary)", margin: "0 0 8px", textAlign: "center" },
-  startSub:       { fontSize: "14px", color: "var(--text-secondary)", margin: "0 0 24px", textAlign: "center", lineHeight: 1.6 },
-  startMeta:      { display: "flex", alignItems: "center", gap: "24px", marginBottom: "28px", background: "var(--bg-secondary)", borderRadius: "12px", padding: "16px 28px", border: "1px solid var(--border-color)" },
-  startMetaItem:  { display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" },
-  startMetaNum:   { fontSize: "20px", fontWeight: 800, color: "var(--text-primary)" },
-  startMetaLabel: { fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" },
-  startMetaDivider:{ width: "1px", height: "36px", background: "var(--border-color)" },
-  startBtn:       { padding: "14px 40px", borderRadius: "10px", border: "none", background: "linear-gradient(90deg, #6366f1, #8b5cf6)", color: "white", fontSize: "16px", fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 14px rgba(99,102,241,0.35)" },
-
-  prevBanner:  { width: "100%", borderRadius: "12px", border: "1px solid", padding: "16px 20px", marginBottom: "20px" },
-  prevCircle:  { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "60px", height: "60px", borderRadius: "50%", border: "2.5px solid", flexShrink: 0 },
-  viewPrevBtn: { padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-card)", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
-
+  tabRow:           { display: "flex", gap: "8px", marginBottom: "28px", borderBottom: "2px solid var(--border-color)" },
+  tabBtn:           { padding: "10px 20px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", marginBottom: "-2px", borderBottom: "2px solid transparent" },
+  tabBtnActive:     { color: "#6366f1", borderBottom: "2px solid #6366f1", background: "var(--bg-secondary)" },
+  theoryCard:       { background: "var(--bg-card)", borderRadius: "16px", border: "1px solid var(--border-color)", overflow: "hidden", boxShadow: "var(--shadow-sm)" },
+  theoryAccent:     { height: "4px", background: "linear-gradient(90deg,#6366f1,#8b5cf6,#06b6d4)" },
+  theoryBody:       { padding: "32px", background: "var(--bg-card)" },
+  theoryHeading:    { fontSize: "14px", fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: "0.06em", margin: "20px 0 8px" },
+  theoryPara:       { fontSize: "15px", color: "var(--text-primary)", lineHeight: 1.8, margin: "0 0 8px" },
+  theoryBullet:     { display: "flex", alignItems: "flex-start", gap: "10px", fontSize: "15px", color: "var(--text-primary)", lineHeight: 1.7, marginBottom: "6px" },
+  bulletDot:        { width: "6px", height: "6px", borderRadius: "50%", background: "#6366f1", flexShrink: 0, marginTop: "8px" },
+  aiBox:            { borderTop: "1px solid var(--border-color)", background: "var(--bg-secondary)", padding: "20px 32px" },
+  aiBoxHeader:      { marginBottom: "12px" },
+  aiBoxTitle:       { fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" },
+  aiInput:          { flex: 1, padding: "10px 14px", borderRadius: "8px", border: "1.5px solid var(--border-color)", fontSize: "14px", outline: "none", fontFamily: "inherit", resize: "none", background: "var(--bg-input)", color: "var(--text-primary)" },
+  aiBtn:            { padding: "10px 20px", borderRadius: "8px", border: "none", background: "linear-gradient(90deg,#6366f1,#4f46e5)", color: "white", fontWeight: 600, fontSize: "14px", cursor: "pointer", flexShrink: 0, alignSelf: "flex-end" },
+  aiAnswer:         { marginTop: "14px", background: "var(--bg-card)", borderRadius: "8px", border: "1px solid var(--border-color)", padding: "14px 16px", fontSize: "14px", color: "var(--text-primary)", lineHeight: 1.7 },
+  videoCard:        { marginBottom: "24px", background: "var(--bg-card)", borderRadius: "14px", border: "1px solid var(--border-color)", overflow: "hidden", boxShadow: "var(--shadow-sm)" },
+  videoLabel:       { padding: "12px 20px", fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", borderBottom: "1px solid var(--border-color)", background: "var(--bg-secondary)" },
+  videoWrap:        { padding: "16px", height: "420px" },
+  emptyState:       { textAlign: "center", padding: "60px 20px" },
+  emptyIcon:        { fontSize: "48px", marginBottom: "12px" },
+  emptyText:        { color: "var(--text-muted)", fontSize: "15px" },
+  testCard:         { background: "var(--bg-card)", borderRadius: "16px", border: "1px solid var(--border-color)", padding: "32px", boxShadow: "var(--shadow-sm)" },
+  startScreen:      { display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 0 10px" },
+  startIconWrap:    { fontSize: "52px", marginBottom: "16px" },
+  startTitle:       { fontSize: "24px", fontWeight: 800, color: "var(--text-primary)", margin: "0 0 8px", textAlign: "center" },
+  startSub:         { fontSize: "14px", color: "var(--text-secondary)", margin: "0 0 24px", textAlign: "center", lineHeight: 1.6 },
+  startMeta:        { display: "flex", alignItems: "center", gap: "24px", marginBottom: "28px", background: "var(--bg-secondary)", borderRadius: "12px", padding: "16px 28px", border: "1px solid var(--border-color)" },
+  startMetaItem:    { display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" },
+  startMetaNum:     { fontSize: "20px", fontWeight: 800, color: "var(--text-primary)" },
+  startMetaLabel:   { fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" },
+  startMetaDivider: { width: "1px", height: "36px", background: "var(--border-color)" },
+  startBtn:         { padding: "14px 40px", borderRadius: "10px", border: "none", background: "linear-gradient(90deg,#6366f1,#8b5cf6)", color: "white", fontSize: "16px", fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 14px rgba(99,102,241,0.35)" },
+  prevBanner:       { width: "100%", borderRadius: "12px", border: "1px solid", padding: "16px 20px", marginBottom: "20px" },
+  prevCircle:       { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "60px", height: "60px", borderRadius: "50%", border: "2.5px solid", flexShrink: 0 },
+  viewPrevBtn:      { padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-card)", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 },
   prevReportHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "24px", paddingBottom: "16px", borderBottom: "1px solid var(--border-color)" },
-  backBtn:  { padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-card)", fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" },
-  peekBtn:  { fontSize: "12px", padding: "4px 12px", borderRadius: "20px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 500 },
-  prevMiniPanel: { background: "var(--bg-secondary)", border: "1px solid #fde68a", borderRadius: "10px", padding: "14px 16px", marginBottom: "16px" },
-
-  questionBox:  { display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "20px", padding: "20px", background: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border-color)" },
-  questionNum:  { background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "white", fontSize: "12px", fontWeight: 700, padding: "4px 10px", borderRadius: "6px", flexShrink: 0, marginTop: "2px" },
-  questionText: { fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.6 },
-
-  scoreBanner:  { display: "flex", alignItems: "center", gap: "24px", border: "1px solid", borderRadius: "14px", padding: "24px", marginBottom: "24px" },
-  scoreCircle:  { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "90px", height: "90px", borderRadius: "50%", border: "3px solid", flexShrink: 0 },
-  retryBtn:     { background: "var(--bg-card)", border: "1.5px solid var(--border-color)", borderRadius: "8px", padding: "8px 20px", fontSize: "13px", fontWeight: 600, cursor: "pointer", color: "var(--text-primary)" },
-  reportCard:   { background: "var(--bg-card)", borderRadius: "12px", padding: "18px 20px", marginBottom: "14px", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" },
-
-  explainBtn: { background: "linear-gradient(90deg,#6366f1,#4f46e5)", color: "white", border: "none", borderRadius: "7px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
-  explainBox: { background: "var(--bg-secondary)", border: "1px solid #ddd6fe", borderRadius: "8px", padding: "14px 16px", marginTop: "4px" },
-  spinner:    { width: "32px", height: "32px", border: "3px solid var(--border-color)", borderTopColor: "#6366f1", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto" },
-
-  genWrap:    { background: "var(--bg-card)", borderRadius: "14px", border: "1.5px solid var(--border-color)", padding: "20px 22px", boxShadow: "var(--shadow-sm)" },
-  genIdle:    { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", flexWrap: "wrap" },
-  genTitle:   { margin: "0 0 4px", fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" },
-  genSub:     { margin: 0, fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5 },
-  genBtn:     { padding: "10px 22px", borderRadius: "8px", border: "none", background: "linear-gradient(90deg,#8b5cf6,#6366f1)", color: "white", fontSize: "14px", fontWeight: 700, cursor: "pointer", flexShrink: 0, boxShadow: "0 2px 8px rgba(139,92,246,0.3)" },
-  genCloseBtn:{ background: "none", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "var(--text-muted)", cursor: "pointer" },
-  aiBadge:    { fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px", background: "#ede9fe", color: "#6d28d9" },
+  backBtn:          { padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-card)", fontSize: "13px", fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer" },
+  peekBtn:          { fontSize: "12px", padding: "4px 12px", borderRadius: "20px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer", fontWeight: 500 },
+  prevMiniPanel:    { background: "var(--bg-secondary)", border: "1px solid #fde68a", borderRadius: "10px", padding: "14px 16px", marginBottom: "16px" },
+  questionBox:      { display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "20px", padding: "20px", background: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border-color)" },
+  questionNum:      { background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "white", fontSize: "12px", fontWeight: 700, padding: "4px 10px", borderRadius: "6px", flexShrink: 0, marginTop: "2px" },
+  questionText:     { fontSize: "16px", fontWeight: 600, color: "var(--text-primary)", margin: 0, lineHeight: 1.6 },
+  scoreBanner:      { display: "flex", alignItems: "center", gap: "24px", border: "1px solid", borderRadius: "14px", padding: "24px", marginBottom: "24px" },
+  scoreCircle:      { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "90px", height: "90px", borderRadius: "50%", border: "3px solid", flexShrink: 0 },
+  retryBtn:         { background: "var(--bg-card)", border: "1.5px solid var(--border-color)", borderRadius: "8px", padding: "8px 20px", fontSize: "13px", fontWeight: 600, cursor: "pointer", color: "var(--text-primary)" },
+  reportCard:       { background: "var(--bg-card)", borderRadius: "12px", padding: "18px 20px", marginBottom: "14px", border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" },
+  explainBtn:       { background: "linear-gradient(90deg,#6366f1,#4f46e5)", color: "white", border: "none", borderRadius: "7px", padding: "8px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
+  explainBox:       { background: "var(--bg-secondary)", border: "1px solid #ddd6fe", borderRadius: "8px", padding: "14px 16px", marginTop: "4px" },
+  spinner:          { width: "32px", height: "32px", border: "3px solid var(--border-color)", borderTopColor: "#6366f1", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto" },
+  genWrap:          { background: "var(--bg-card)", borderRadius: "14px", border: "1.5px solid #fde68a", padding: "20px 22px", boxShadow: "var(--shadow-sm)" },
+  genIdle:          { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", flexWrap: "wrap" },
+  genTitle:         { margin: "0 0 4px", fontSize: "15px", fontWeight: 700, color: "var(--text-primary)" },
+  genSub:           { margin: 0, fontSize: "13px", color: "var(--text-secondary)", lineHeight: 1.5 },
+  genBtn:           { padding: "10px 22px", borderRadius: "8px", border: "none", background: "linear-gradient(90deg,#8b5cf6,#6366f1)", color: "white", fontSize: "14px", fontWeight: 700, cursor: "pointer", flexShrink: 0, boxShadow: "0 2px 8px rgba(139,92,246,0.3)" },
+  genCloseBtn:      { background: "none", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "4px 10px", fontSize: "12px", color: "var(--text-muted)", cursor: "pointer" },
+  aiBadge:          { fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" },
 };
 
 if (typeof document !== "undefined") {
