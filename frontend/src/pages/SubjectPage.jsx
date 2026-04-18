@@ -313,59 +313,58 @@ function SubjectPage() {
         const topicList = res.data.topics?.[subjectName] || [];
         setProgressData(topicList);
 
-        if (topicList.length === 0) return;
+        if (topicList.length === 0 || !subject) return;
 
-        // Build a title-keyed score map for rule engine
-        // Topics in DB are stored by slug; we match them to SubjectsData titles
+        // 1. Map scores from DB (slugified) to their respective values
         const scoreBySlug = {};
-        topicList.forEach(t => { scoreBySlug[slugify(t.topic)] = t.score; });
+        topicList.forEach(t => { 
+          scoreBySlug[slugify(t.topic)] = t.score; 
+        });
 
-        // Build title → score map by matching slugs
+        // 2. Build title-keyed score map for the Rule Engine
+        // IMPORTANT: The Rule Engine uses .title to check prerequisites
         const scoreByTitle = {};
-        if (subject) {
-          subject.topics.forEach(t => {
-            const score = scoreBySlug[t.key];
-            if (score !== undefined) scoreByTitle[t.title] = score;
-          });
-        }
+        subject.topics.forEach(t => {
+          const score = scoreBySlug[t.key];
+          if (score !== undefined && score > 0) {
+            scoreByTitle[t.title] = score;
+          }
+        });
 
-        // ── STEP 1: Rule-based predictions — runs instantly ──
-        if (subject) {
-          const rulePreds = computeRuleBasedPredictions(subject.topics, scoreByTitle);
-          setPredictions(rulePreds);
-        }
+        // 3. STEP 1: Run Rule-based predictions INSTANTLY
+        const rulePreds = computeRuleBasedPredictions(subject.topics, scoreByTitle);
+        setPredictions(rulePreds);
 
-        // ── STEP 2: ML predictions — runs in background ──
+        // 4. STEP 2: ML predictions — runs in background
         setMlUpgrading(true);
         if (mlAbortRef.current) mlAbortRef.current.abort();
         mlAbortRef.current = new AbortController();
 
-        const topicScores = {};
-        topicList.forEach(t => { topicScores[slugify(t.topic)] = t.score; });
+        // Send simple slugified topic scores to the Flask ML Service
+        const mlPayload = {};
+        topicList.forEach(t => { mlPayload[slugify(t.topic)] = t.score; });
 
         axios.post(
           `${BASE_URL}/api/ml/predict-struggle`,
-          { subject: subjectName, topicScores },
-          { headers: authHeader(), signal: mlAbortRef.current.signal, timeout: 40000 }
+          { subject: subjectName, topicScores: mlPayload },
+          { headers: authHeader(), signal: mlAbortRef.current.signal, timeout: 45000 }
         )
           .then(mlRes => {
             const mlPreds = mlRes.data.predictions || [];
             if (mlPreds.length > 0) {
-              // ML responded with real predictions — upgrade from rule-based
+              // ML responded — smoothly replace rule-based predictions
               const tagged = mlPreds.map(p => ({ ...p, source: "ml" }));
               setPredictions(tagged);
             }
-            // If ML returns empty (not_enough_data), keep rule-based
           })
           .catch(err => {
             if (axios.isCancel(err)) return;
-            // ML failed — rule-based predictions stay visible, no disruption
-            console.log("ML unavailable, keeping rule-based predictions:", err.message);
+            console.log("ML background fetch failed/timeout, keeping rule-based results.");
           })
           .finally(() => setMlUpgrading(false));
       })
       .catch(err => console.log("Analytics error:", err));
-  }, [subjectName, subject]);
+  }, [subjectName, subject])
 
   useEffect(() => {
     fetchProgress();
