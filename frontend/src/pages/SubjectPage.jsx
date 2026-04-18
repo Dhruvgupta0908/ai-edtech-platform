@@ -99,18 +99,23 @@ function computeRuleBasedPredictions(topics, scoreMap) {
     // Cap at 0.95
     riskScore = Math.min(0.95, riskScore);
 
-    if (riskScore >= 0.40) {
-      predictions.push({
-        title:        topic.title,
-        will_struggle: true,
-        confidence:   Math.round(riskScore * 1000) / 1000,
-        source:       "rule-based",
-        reasons,
-      });
-    }
-  });
+     const lastScore = priorScores[priorScores.length - 1];
 
-  return predictions;
+  const ruleTriggered =
+    lastScore !== undefined && lastScore <= 30;
+
+  if (riskScore >= 0.40 || ruleTriggered) {
+    predictions.push({
+      title: topic.title,
+      will_struggle: true,
+      confidence: Math.max(riskScore, 0.6),
+      source: "rule-based",
+      reasons,
+    });
+  }
+}); // ✅ closes forEach
+
+return predictions;
 }
 
 
