@@ -1,3 +1,6 @@
+
+
+
 // frontend/src/components/AISummaryBox.jsx
 // DROP-IN component — add inside the theory tab in Topicpage.jsx
 // Place it ABOVE the TextToSpeech component:
@@ -11,8 +14,11 @@ import { authHeader } from "../utils/auth";
 const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
 
 export default function AISummaryBox({ topic, subject, theory }) {
-  const [status,  setStatus]  = useState("idle"); // idle | loading | done | error
+  const [status,  setStatus]  = useState("idle");
   const [points,  setPoints]  = useState([]);
+
+  // Guard — don't render if topic data hasn't loaded yet
+  if (!topic || !theory) return null;
 
   const getSummary = async () => {
     setStatus("loading");
