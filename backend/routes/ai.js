@@ -267,5 +267,60 @@ Respond with ONLY the JSON array of ${targetDays} day objects:`;
   }
 });
 
+// ADD THIS ROUTE to backend/routes/ai.js
+// (paste it before module.exports)
+
+/* =======================================================
+   POST /api/ai/summarise
+   Returns a 5-point bullet summary of the topic theory.
+   Used on the Theory tab as a quick revision aid.
+======================================================= */
+router.post("/summarise", async (req, res) => {
+  const { topic, subject, theory } = req.body;
+  if (!topic || !theory) return res.status(400).json({ error: "topic and theory are required" });
+
+  const systemPrompt = `You are a GATE CS expert. Summarise a topic into exactly 5 bullet points.
+Each point must be one clear sentence, technically accurate, and exam-focused.
+Format: return ONLY a JSON array of 5 strings. No explanation, no markdown, no backticks.
+Example: ["Point 1.", "Point 2.", "Point 3.", "Point 4.", "Point 5."]`;
+
+  const userPrompt = `Topic: ${topic}
+Subject: ${subject}
+Theory:
+${theory.slice(0, 1000)}
+
+Return a JSON array of exactly 5 key points a GATE student must remember about this topic.`;
+
+  try {
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.1-8b-instant",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user",   content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens:  400
+      },
+      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, "Content-Type": "application/json" } }
+    );
+
+    const raw     = response.data?.choices?.[0]?.message?.content?.trim();
+    const cleaned = raw.replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/i,"").trim();
+
+    let points;
+    try { points = JSON.parse(cleaned); }
+    catch { return res.status(500).json({ error: "AI returned invalid JSON" }); }
+
+    if (!Array.isArray(points)) return res.status(500).json({ error: "Expected array" });
+
+    res.json({ points: points.slice(0, 5) });
+  } catch (err) {
+    console.error("SUMMARISE ERROR:", err.response?.data || err.message);
+    res.status(500).json({ error: "Summarisation failed" });
+  }
+});
+
 
 module.exports = router;
