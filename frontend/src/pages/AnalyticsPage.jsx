@@ -142,11 +142,12 @@ const AnalyticsPage = () => {
   if (loading) return <div style={{ padding: "80px 40px", textAlign: "center", color: "var(--text-secondary)", fontSize: "14px" }}>Loading analytics...</div>;
   if (!analytics) return <div style={{ padding: "80px 40px", textAlign: "center", color: "var(--text-secondary)", fontSize: "14px" }}>Could not load analytics. Make sure the backend is running.</div>;
 
+  const topicData    = analytics.topics[selectedSubject] || [];
   const allTopics    = Object.values(analytics.topics).flat();
   const strongTopics = allTopics.filter(t => t.score >= 70);
   const weakTopics   = allTopics.filter(t => t.score < 40);
   const avgScore     = allTopics.length ? Math.round(allTopics.reduce((a, b) => a + b.score, 0) / allTopics.length) : 0;
-  const topicData    = analytics.topics[selectedSubject] || [];
+ 
   const recommendations = weakTopics.slice(0, 4);
   const nextTopic    = weakTopics[0];
 
