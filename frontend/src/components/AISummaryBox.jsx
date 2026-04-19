@@ -8,7 +8,7 @@ import { useState } from "react";
 import axios from "axios";
 import { authHeader } from "../utils/auth";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
 
 export default function AISummaryBox({ topic, subject, theory }) {
   const [status,  setStatus]  = useState("idle"); // idle | loading | done | error
