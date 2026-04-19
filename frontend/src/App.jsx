@@ -1,26 +1,25 @@
 // frontend/src/App.jsx
-// UPDATED — DarkModeToggle added globally so it appears on every single page
+// FINAL — includes Leaderboard route
 
 import { Routes, Route } from "react-router-dom";
 
-import Home            from "./pages/Home";
-import Login           from "./pages/Login";
-import Signup          from "./pages/Signup";
-import Dashboard       from "./pages/Dashboard";
-import SubjectPage     from "./pages/SubjectPage";
-import TopicPage       from "./pages/Topicpage";
-import ProfilePage     from "./pages/ProfilePage";
-import AnalyticsPage   from "./pages/AnalyticsPage";
-import ConceptMap      from "./pages/ConceptMap";
-import StudyPlan       from "./pages/StudyPlan";
-import DarkModeToggle  from "./components/DarkModeToggle";
+import Home           from "./pages/Home";
+import Login          from "./pages/Login";
+import Signup         from "./pages/Signup";
+import Dashboard      from "./pages/Dashboard";
+import SubjectPage    from "./pages/SubjectPage";
+import TopicPage      from "./pages/Topicpage";
+import ProfilePage    from "./pages/ProfilePage";
+import AnalyticsPage  from "./pages/AnalyticsPage";
+import ConceptMap     from "./pages/ConceptMap";
+import StudyPlan      from "./pages/StudyPlan";
+import Leaderboard    from "./pages/Leaderboard";
+import DarkModeToggle from "./components/DarkModeToggle";
 
 function App() {
   return (
     <>
-      {/* Floating dark mode toggle — visible on every page automatically */}
       <DarkModeToggle />
-
       <Routes>
         <Route path="/"                              element={<Home />}          />
         <Route path="/login"                         element={<Login />}         />
@@ -32,6 +31,7 @@ function App() {
         <Route path="/analytics"                     element={<AnalyticsPage />} />
         <Route path="/concept-map/:subjectName"      element={<ConceptMap />}    />
         <Route path="/study-plan"                    element={<StudyPlan />}     />
+        <Route path="/leaderboard"                   element={<Leaderboard />}   />
       </Routes>
     </>
   );

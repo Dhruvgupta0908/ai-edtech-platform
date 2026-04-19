@@ -9,8 +9,14 @@ import axios from "axios";
 import { useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { authHeader } from "../utils/auth";
+import AISummaryBox from "../components/AISummaryBox";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
+
+
+// Inside the theory tab, BEFORE <TextToSpeech text={topicData.theory} />:
+// eslint-disable-next-line no-undef
+<AISummaryBox topic={topicData.title} subject={subjectName} theory={topicData.theory} />
 
 /* ══════════════════════════════════════════════════════
    TEXT TO SPEECH  (embedded — no separate import needed)

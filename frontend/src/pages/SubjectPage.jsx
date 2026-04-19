@@ -55,22 +55,7 @@ function computeRuleBasedPredictions(topics, scoreByTitle) {
     // we can't meaningfully predict — skip it
     const hasPrereqs   = (topic.prerequisites || []).length > 0;
     const noPrereqData = hasPrereqs && prereqScores.length === 0;
-    // Instead of skipping, allow weak default prediction
-if (noPrereqData) {
-  const lastScore = priorScores[priorScores.length - 1];
-
-  if (lastScore !== undefined && lastScore <= 30) {
-    predictions.push({
-      title: topic.title,
-      will_struggle: true,
-      confidence: 0.6,
-      source: "rule-based",
-      reasons: ["recent weak performance"],
-    });
-  }
-
-  return;
-}
+    if (noPrereqData) return;
 
     const prereqAvg = prereqScores.length > 0
       ? prereqScores.reduce((a, b) => a + b, 0) / prereqScores.length
