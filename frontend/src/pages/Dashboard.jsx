@@ -3,11 +3,12 @@
 
 import React, { useEffect, useState } from "react";
 import SubjectCard from "../components/SubjectCard";
+import DailyQuote  from "../components/DailyQuote";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { authHeader, isLoggedIn, getUserName } from "../utils/auth";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const flameColor = (n) => {
   if (!n || n === 0) return "#9ca3af";
@@ -119,6 +120,9 @@ const Dashboard = () => {
             </button>
           ))}
         </div>
+
+        {/* Daily Quote */}
+        <DailyQuote />
 
         {/* Subject grid */}
         <div className="subjects-grid">

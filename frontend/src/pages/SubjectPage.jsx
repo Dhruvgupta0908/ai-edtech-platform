@@ -18,6 +18,16 @@ const slugify = (text) =>
     .replace(/\//g, "-").replace(/\s+/g, "-")
     .replace(/[^\w-]/g, "").replace(/--+/g, "-");
 
+/* ── Difficulty badge based on position + prerequisite count ── */
+const getDifficulty = (topic, index) => {
+  const prereqCount = (topic.prerequisites || []).length;
+  if (index <= 1 && prereqCount === 0)
+    return { label: "Easy",   color: "#16a34a", bg: "#dcfce7", border: "#86efac" };
+  if (index >= 7 || prereqCount >= 2)
+    return { label: "Hard",   color: "#dc2626", bg: "#fee2e2", border: "#fca5a5" };
+  return   { label: "Medium", color: "#d97706", bg: "#fef3c7", border: "#fde68a" };
+};
+
 
 /* ══════════════════════════════════════════════════════
    RULE-BASED RISK ENGINE  (fixed)
@@ -434,12 +444,19 @@ function SubjectPage() {
         const pred       = predByTitle[topic.title];
         const isAtRisk   = pred?.will_struggle && score === 0;
         const isML       = pred?.source === "ml";
+        const diff       = getDifficulty(topic, index);
 
         return (
           <div key={index} style={{ background: "var(--bg-card)", borderRadius: "10px", padding: "14px 16px", marginBottom: "10px", boxShadow: "var(--shadow-sm)", border: isAtRisk ? "1.5px solid #fde68a" : "1px solid var(--border-color)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "15px", fontWeight: 500, color: "var(--text-primary)" }}>{topic.title}</span>
+
+                {/* Difficulty badge */}
+                <span style={{ fontSize: "10px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: diff.bg, color: diff.color, border: `1px solid ${diff.border}`, flexShrink: 0 }}>
+                  {diff.label}
+                </span>
+
                 {isAtRisk && (
                   <span style={{ fontSize: "11px", fontWeight: 700, padding: "2px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}
                     title={isML ? "Predicted by ML model" : "Predicted by rule-based engine"}>
