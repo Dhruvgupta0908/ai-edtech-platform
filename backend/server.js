@@ -1,4 +1,6 @@
-// backend/server.js — FINAL with PYQ route registered
+// backend/server.js — FIXED
+// Removed notes route (file doesn't exist yet)
+// Added pyq route
 
 const express  = require("express");
 const mongoose = require("mongoose");
@@ -18,8 +20,7 @@ app.use("/api/progress",  require("./routes/progress"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/streak",    require("./routes/streak"));
 app.use("/api/ml",        require("./routes/ml"));
-app.use("/api/notes",     require("./routes/notes"));
-app.use("/api/pyq",       require("./routes/pyq"));     // ← NEW
+app.use("/api/pyq",       require("./routes/pyq"));
 
 app.get("/", (req, res) => res.send("CoreMind AI backend running 🚀"));
 
