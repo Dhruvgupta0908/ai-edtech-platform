@@ -1,4 +1,5 @@
-// backend/server.js
+// backend/server.js — FINAL with PYQ route registered
+
 const express  = require("express");
 const mongoose = require("mongoose");
 const cors     = require("cors");
@@ -17,6 +18,8 @@ app.use("/api/progress",  require("./routes/progress"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/streak",    require("./routes/streak"));
 app.use("/api/ml",        require("./routes/ml"));
+app.use("/api/notes",     require("./routes/notes"));
+app.use("/api/pyq",       require("./routes/pyq"));     // ← NEW
 
 app.get("/", (req, res) => res.send("CoreMind AI backend running 🚀"));
 

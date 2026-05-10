@@ -1,8 +1,5 @@
 // frontend/src/pages/Topicpage.jsx
-// FIXED:
-//   1. TextToSpeech embedded directly (no import needed) and added to theory tab
-//   2. /ai/ask URL fixed — was missing /api/ prefix → 404
-//   3. GATE-level questions (GeneratePractice) show after 70%+ score
+// COMPLETE FINAL VERSION — includes PYQ tab
 
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
@@ -10,11 +7,12 @@ import { useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { authHeader } from "../utils/auth";
 import AISummaryBox from "../components/AISummaryBox";
+import PYQTab from "../components/PYQTab";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "https://ai-edtech-backend-r2y7.onrender.com";
 
 /* ══════════════════════════════════════════════════════
-   TEXT TO SPEECH  (embedded — no separate import needed)
+   TEXT TO SPEECH
 ══════════════════════════════════════════════════════ */
 function TextToSpeech({ text }) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -33,7 +31,6 @@ function TextToSpeech({ text }) {
     setIsPlaying(false); setIsPaused(false);
   };
 
-  // Chrome bug: speech silently stops after ~15s — keep alive by pause/resume
   const startWorkaround = () => {
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
@@ -74,8 +71,6 @@ function TextToSpeech({ text }) {
   };
 
   if (!supported) return null;
-
-  const active = isPlaying || isPaused;
   const speeds = [0.75, 1, 1.25, 1.5];
 
   return (
@@ -92,7 +87,7 @@ function TextToSpeech({ text }) {
             ⏸ Pause
           </button>
         )}
-        {active && (
+        {(isPlaying || isPaused) && (
           <button onClick={stopAll} style={{ fontSize: "13px", padding: "5px 14px", borderRadius: "7px", border: "1px solid var(--border-color)", background: "var(--bg-card)", color: "var(--text-secondary)", cursor: "pointer" }}>
             ⏹ Stop
           </button>
@@ -110,7 +105,6 @@ function TextToSpeech({ text }) {
     </div>
   );
 }
-
 
 /* ══════════════════════════════════════════════════════
    ExplainBox
@@ -152,9 +146,8 @@ const ExplainBox = ({ topic, subject, ans }) => {
   );
 };
 
-
 /* ══════════════════════════════════════════════════════
-   OptionRow — shared quiz option component
+   OptionRow
 ══════════════════════════════════════════════════════ */
 const OptionRow = ({ opt, i, isSelected, onClick, accentColor = "#6366f1" }) => (
   <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "10px", cursor: onClick ? "pointer" : "default", border: isSelected ? `2px solid ${accentColor}` : "1.5px solid var(--border-color)", background: isSelected ? "var(--bg-hover)" : "var(--bg-card)", transition: "all 0.15s" }}>
@@ -165,9 +158,8 @@ const OptionRow = ({ opt, i, isSelected, onClick, accentColor = "#6366f1" }) => 
   </div>
 );
 
-
 /* ══════════════════════════════════════════════════════
-   ReportOptionRow — correct/wrong coloring in results
+   ReportOptionRow
 ══════════════════════════════════════════════════════ */
 const ReportOptionRow = ({ opt, j, isCorrect, isWrongChosen }) => {
   let borderLeft = "3px solid var(--border-color)", bg = "var(--bg-secondary)", textColor = "var(--text-primary)", circleBg = "var(--bg-hover)", circleColor = "var(--text-muted)", labelText = "";
@@ -184,9 +176,8 @@ const ReportOptionRow = ({ opt, j, isCorrect, isWrongChosen }) => {
   );
 };
 
-
 /* ══════════════════════════════════════════════════════
-   GeneratePractice — shown after 70%+ score
+   GeneratePractice
 ══════════════════════════════════════════════════════ */
 const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
   const [phase,          setPhase]          = useState("idle");
@@ -232,7 +223,7 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
               <p style={s.genTitle}>🎯 GATE-Level Practice</p>
               <span style={s.aiBadge}>✨ AI Generated</span>
             </div>
-            <p style={s.genSub}>You scored 70%+! Try 5 advanced GATE-style questions to challenge yourself.</p>
+            <p style={s.genSub}>You scored 70%+! Try 5 advanced GATE-style questions.</p>
             {error && <p style={{ color: "#dc2626", fontSize: "13px", margin: "4px 0 0" }}>{error}</p>}
           </div>
           <button onClick={generate} style={{ ...s.genBtn, background: "linear-gradient(90deg,#f59e0b,#d97706)" }}>Generate Questions →</button>
@@ -241,7 +232,7 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
       {phase === "loading" && (
         <div style={{ ...s.genIdle, justifyContent: "center", gap: "14px" }}>
           <div style={s.spinner} />
-          <div><p style={s.genTitle}>Generating GATE-level questions...</p><p style={s.genSub}>This may take a few seconds.</p></div>
+          <div><p style={s.genTitle}>Generating GATE-level questions...</p></div>
         </div>
       )}
       {phase === "question" && (
@@ -256,7 +247,7 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
           <div style={{ height: "4px", background: "var(--border-color)", borderRadius: "4px", overflow: "hidden", marginBottom: "20px" }}>
             <div style={{ height: "100%", width: `${(currentIndex / aiQuestions.length) * 100}%`, background: "linear-gradient(90deg,#f59e0b,#d97706)", borderRadius: "4px" }} />
           </div>
-          <div style={{ ...s.questionBox, background: "var(--bg-secondary)", border: "1px solid #fde68a" }}>
+          <div style={{ ...s.questionBox, border: "1px solid #fde68a" }}>
             <span style={{ ...s.questionNum, background: "linear-gradient(135deg,#f59e0b,#d97706)" }}>Q{currentIndex + 1}</span>
             <h3 style={s.questionText}>{aiQuestions[currentIndex].question}</h3>
           </div>
@@ -283,7 +274,6 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
               <button onClick={generate} style={{ ...s.genBtn, padding: "7px 16px", fontSize: "13px", background: "linear-gradient(90deg,#f59e0b,#d97706)" }}>Try 5 More →</button>
             </div>
           </div>
-          <h4 style={{ fontSize: "14px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "12px" }}>Breakdown</h4>
           {answers.map((ans, i) => (
             <div key={i} style={{ ...s.reportCard, borderLeft: `4px solid ${ans.isCorrect ? "#22c55e" : "#ef4444"}`, marginBottom: "10px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
@@ -300,7 +290,6 @@ const GeneratePractice = ({ topicData, subjectName, existingQuestions }) => {
     </div>
   );
 };
-
 
 /* ══════════════════════════════════════════════════════
    ResultsView
@@ -330,7 +319,11 @@ const ResultsView = ({ answers, totalQuestions, topicTitle, subjectName, onRetry
       </div>
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "28px", flexWrap: "wrap" }}>
-        {[{ label: `✅  ${correctCount} Correct`, bg: "#dcfce7", color: "#166534" }, { label: `❌  ${answers.filter(a => !a.isCorrect).length} Wrong`, bg: "#fee2e2", color: "#991b1b" }, { label: `📝  ${totalQuestions} Total`, bg: "#e0f2fe", color: "#075985" }].map((p, i) => (
+        {[
+          { label: `✅  ${correctCount} Correct`,                           bg: "#dcfce7", color: "#166534" },
+          { label: `❌  ${answers.filter(a => !a.isCorrect).length} Wrong`, bg: "#fee2e2", color: "#991b1b" },
+          { label: `📝  ${totalQuestions} Total`,                            bg: "#e0f2fe", color: "#075985" },
+        ].map((p, i) => (
           <span key={i} style={{ padding: "6px 16px", borderRadius: "20px", fontSize: "13px", fontWeight: 500, background: p.bg, color: p.color }}>{p.label}</span>
         ))}
       </div>
@@ -348,15 +341,13 @@ const ResultsView = ({ answers, totalQuestions, topicTitle, subjectName, onRetry
         </div>
       ))}
 
-      {/* GATE-Level practice — only shown on current attempt when score >= 70% */}
       {!isPrevious && percentage >= 70 && topicDataRef && (
         <div style={{ marginTop: "32px", borderTop: "1px solid var(--border-color)", paddingTop: "28px" }}>
           <GeneratePractice topicData={topicDataRef} subjectName={subjectName} existingQuestions={answers} />
         </div>
       )}
 
-      {/* Regular practice for lower scores */}
-      {!isPrevious && percentage < 70 && topicDataRef && (
+      {!isPrevious && percentage < 70 && (
         <div style={{ marginTop: "24px", padding: "16px 20px", background: "var(--bg-secondary)", borderRadius: "12px", border: "1px solid var(--border-color)" }}>
           <p style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: 600, color: "var(--text-primary)" }}>📚 Keep practising</p>
           <p style={{ margin: 0, fontSize: "13px", color: "var(--text-secondary)" }}>Score 70% or above to unlock GATE-level questions. Review the theory and retry!</p>
@@ -365,7 +356,6 @@ const ResultsView = ({ answers, totalQuestions, topicTitle, subjectName, onRetry
     </div>
   );
 };
-
 
 /* ══════════════════════════════════════════════════════
    MAIN TOPIC PAGE
@@ -444,7 +434,6 @@ const TopicPage = () => {
     } else { setCurrentIndex(nextIndex); }
   };
 
-  // FIXED: was "/ai/ask" — missing /api/ prefix → 404 on deployed version
   const askAI = async () => {
     if (!aiQuestion.trim()) return;
     setLoadingAI(true); setAiAnswer("");
@@ -466,13 +455,20 @@ const TopicPage = () => {
     </div>
   );
 
-  const pageTitle   = topicData.title.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-  const prevCorrect = previousAnswers.filter(a => a.isCorrect).length;
-  const prevTotal   = previousAnswers.length;
-  const prevPct     = prevTotal ? Math.round((prevCorrect / prevTotal) * 100) : 0;
+  const pageTitle      = topicData.title.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const prevCorrect    = previousAnswers.filter(a => a.isCorrect).length;
+  const prevTotal      = previousAnswers.length;
+  const prevPct        = prevTotal ? Math.round((prevCorrect / prevTotal) * 100) : 0;
   const prevScoreColor = prevPct >= 70 ? "#16a34a" : prevPct >= 40 ? "#d97706" : "#dc2626";
   const prevScoreBg    = prevPct >= 70 ? "#f0fdf4"  : prevPct >= 40 ? "#fffbeb"  : "#fef2f2";
   const hasPrevious    = previousAnswers.length > 0;
+
+  const TABS = [
+    { key: "theory", label: "📖  Theory"  },
+    { key: "videos", label: "🎬  Videos"  },
+    { key: "test",   label: "✏️  Test"    },
+    { key: "pyq",    label: "🏆  PYQ"     },
+  ];
 
   return (
     <div style={s.page}>
@@ -481,8 +477,9 @@ const TopicPage = () => {
         <h1 style={s.headerTitle}>{pageTitle}</h1>
       </div>
 
+      {/* TABS */}
       <div style={s.tabRow}>
-        {[{ key: "theory", label: "📖  Theory" }, { key: "videos", label: "🎬  Videos" }, { key: "test", label: "✏️  Test" }].map(tab => (
+        {TABS.map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             style={{ ...s.tabBtn, ...(activeTab === tab.key ? s.tabBtnActive : {}) }}>
             {tab.label}
@@ -490,17 +487,13 @@ const TopicPage = () => {
         ))}
       </div>
 
-      {/* ── THEORY TAB — includes TextToSpeech ── */}
+      {/* ── THEORY TAB ── */}
       {activeTab === "theory" && (
         <div style={s.theoryCard}>
           <div style={s.theoryAccent} />
           <div style={s.theoryBody}>
-            {/* AI QUICK SUMMARY */}
             <AISummaryBox topic={topicData.title} subject={subjectName} theory={topicData.theory} />
-
-            {/* TEXT TO SPEECH — now visible on deployed version */}
             <TextToSpeech text={topicData.theory} />
-
             {topicData.theory.split("\n").map((line, i) => {
               if (!line.trim()) return <div key={i} style={{ height: "8px" }} />;
               if (line.trim().endsWith(":") && line.length < 60) return <p key={i} style={s.theoryHeading}>{line}</p>;
@@ -546,7 +539,6 @@ const TopicPage = () => {
       {/* ── TEST TAB ── */}
       {activeTab === "test" && adaptiveQuestions.length > 0 && (
         <div style={s.testCard}>
-
           {testPhase === "start" && (
             <div style={s.startScreen}>
               <div style={s.startIconWrap}>✏️</div>
@@ -628,13 +620,11 @@ const TopicPage = () => {
                 <span style={s.questionNum}>Q{currentIndex + 1}</span>
                 <h3 style={s.questionText}>{adaptiveQuestions[currentIndex].question}</h3>
               </div>
-
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
                 {adaptiveQuestions[currentIndex].options.map((option, i) => (
                   <OptionRow key={i} opt={option} i={i} isSelected={selectedOption === i} onClick={() => setSelectedOption(i)} />
                 ))}
               </div>
-
               <button onClick={handleAdaptiveAnswer} disabled={selectedOption === null} style={{ width: "100%", padding: "14px", borderRadius: "10px", border: "none", background: selectedOption === null ? "var(--bg-secondary)" : "linear-gradient(90deg,#6366f1,#8b5cf6)", color: selectedOption === null ? "var(--text-muted)" : "white", fontSize: "15px", fontWeight: 600, cursor: selectedOption === null ? "not-allowed" : "pointer", transition: "all 0.2s" }}>
                 {currentIndex + 1 === adaptiveQuestions.length ? "Finish Test 🎯" : "Next Question →"}
               </button>
@@ -646,20 +636,23 @@ const TopicPage = () => {
           )}
         </div>
       )}
+
+      {/* ── PYQ TAB ── */}
+      {activeTab === "pyq" && (
+        <PYQTab subject={subjectName} topic={topicName} />
+      )}
+
     </div>
   );
 };
 
-
-/* ══════════════════════════════════════════════════════
-   STYLES
-══════════════════════════════════════════════════════ */
+/* STYLES */
 const s = {
   page:             { maxWidth: "820px", margin: "0 auto", padding: "40px 24px 80px" },
   header:           { marginBottom: "32px" },
   headerBreadcrumb: { fontSize: "12px", color: "var(--text-muted)", textTransform: "capitalize", letterSpacing: "0.04em", marginBottom: "8px" },
   headerTitle:      { fontSize: "30px", fontWeight: 800, color: "var(--text-primary)", margin: 0, lineHeight: 1.2 },
-  tabRow:           { display: "flex", gap: "8px", marginBottom: "28px", borderBottom: "2px solid var(--border-color)" },
+  tabRow:           { display: "flex", gap: "8px", marginBottom: "28px", borderBottom: "2px solid var(--border-color)", flexWrap: "wrap" },
   tabBtn:           { padding: "10px 20px", borderRadius: "8px 8px 0 0", border: "none", background: "transparent", fontSize: "14px", fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", transition: "all 0.15s", marginBottom: "-2px", borderBottom: "2px solid transparent" },
   tabBtnActive:     { color: "#6366f1", borderBottom: "2px solid #6366f1", background: "var(--bg-secondary)" },
   theoryCard:       { background: "var(--bg-card)", borderRadius: "16px", border: "1px solid var(--border-color)", overflow: "hidden", boxShadow: "var(--shadow-sm)" },
